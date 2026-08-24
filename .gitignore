@@ -1,0 +1,6 @@
+# Cargo build output for the playground crate.
+/target
+
+# `build wasm` output (regenerated); web/site/index.html and playground.wasm are tracked.
+/web/site/thrax.js
+/web/site/thrax.wasm

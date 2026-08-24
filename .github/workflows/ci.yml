@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# The applications build against the Thrax compiler, so CI checks the compiler
+# out alongside this repo and nests this repo where a submodule would sit
+# (compiler/applications). The playground crate reaches the compiler crates by
+# the same relative path it uses in a normal submodule checkout.
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the Thrax compiler
+        uses: actions/checkout@v4
+        with:
+          repository: delyan-kirov/BC
+          path: compiler
+
+      - name: Check out this repo into the compiler tree
+        uses: actions/checkout@v4
+        with:
+          path: compiler/applications
+
+      - uses: cachix/install-nix-action@v27
+
+      - name: Build the playground and run the browser smoke test
+        working-directory: compiler/applications
+        run: |
+          nix develop ../.. --command bash -c '
+            set -e
+            cargo build -p playground --target wasm32-unknown-unknown --release
+            cp target/wasm32-unknown-unknown/release/playground.wasm web/site/playground.wasm
+            node web/smoke.mjs
+          '
