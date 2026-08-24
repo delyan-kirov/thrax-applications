@@ -1,7 +1,7 @@
 # Thrax Launcher
 
 A tiny program launcher written in Thrax against [raylib](https://www.raylib.com/).
-Click a button to spawn the program it names.
+Type to filter the list, then click a button to spawn the program it names.
 
 The whole raylib API is imported from `RAYLIB.thx`, which is **generated** by the
 cbindgen tool (`applications/cbindgen`) from raylib's header. `MAIN.thx` just does
@@ -24,6 +24,27 @@ beginDrawing {}                                                       # unit
 The generated bindings use the `@`-sigil built-in types (`@int32`, `@nat8`, ...),
 so coordinates are `@int32`; the app stays integer-only (positions, sizes, the
 mouse via `getMouseX`/`getMouseY`), no floats.
+
+## Type-to-search
+
+The search box reads keystrokes with raylib's `getCharPressed` and filters the
+list by a case-insensitive substring match. `getCharPressed` returns a C `int`
+(`@int32`), but the string library works in `Int`, and those widths are distinct
+types. The `@cast` intrinsic bridges them:
+
+```
+$ read_chars : Str -> Str = \q =
+	let c = getCharPressed {} in            # c : @int32
+	if c ?= 0 => q
+	else if c >= 32 && c ?< 127 => read_chars (q ++ from_byte (@cast c))
+	else read_chars q                       # from_byte wants Int; @cast c widens it
+```
+
+`@cast` reinterprets an integer at another width. It is type-directed: the target
+comes from the checking context (an argument position or an annotated binding),
+so `from_byte (@cast c)` casts to `Int` because `from_byte : Int -> Str`. Both
+engines box integers uniformly, so it is a no-op at runtime; the actual C width is
+applied only at the `@extern` boundary.
 
 Regenerate the bindings after a raylib upgrade:
 
