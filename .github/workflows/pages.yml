@@ -42,7 +42,7 @@ jobs:
       - name: Build the playground
         working-directory: compiler/applications
         run: |
-          nix develop ../.. --command bash -c '
+          nix develop .. --command bash -c '
             set -e
             cargo build -p playground --target wasm32-unknown-unknown --release
             cp target/wasm32-unknown-unknown/release/playground.wasm web/site/playground.wasm
