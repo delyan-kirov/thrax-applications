@@ -1,7 +1,8 @@
 # Thrax Launcher
 
 A tiny program launcher written in Thrax against [raylib](https://www.raylib.com/).
-Type to filter the list, then click a button to spawn the program it names.
+Type to filter the list, then click a button to spawn the program it names, or
+lead the query with a sigil to run a command, search the web, or invoke a tool.
 
 The whole raylib API is imported from `RAYLIB.thx`, which is **generated** by the
 cbindgen tool (`applications/cbindgen`) from raylib's header. `MAIN.thx` just does
@@ -45,6 +46,33 @@ comes from the checking context (an argument position or an annotated binding),
 so `from_byte (@cast c)` casts to `Int` because `from_byte : Int -> Str`. Both
 engines box integers uniformly, so it is a no-op at runtime; the actual C width is
 applied only at the `@extern` boundary.
+
+## Command modes
+
+The first byte of the query picks a mode; press **Enter** to commit it. With no
+sigil the query just filters the app list (unchanged), and apps still launch on
+click.
+
+| Prefix | Example | Effect |
+| ------ | ------------- | ---------------------------------------------------- |
+| `!`    | `! htop`      | Spawn a terminal running the command, then close the launcher. |
+| `?`    | `? raylib`    | Open the query as a web search; the box clears, the launcher stays. |
+| `$`    | `$time`       | Run a curated tool in a terminal; the box clears. |
+
+The `$` tools are a small table in `MAIN.thx`: `time` runs `date`, `cal` runs
+`cal`, `disk` runs `df -h`, `mem` runs `free -h`. An unknown name leaves the
+query in place so the typo stays visible. Every mode is `system(3)` underneath,
+so the terminal and search engine are two editable constants at the top of the
+file:
+
+```
+$ terminal   : Str = "xterm"
+$ search_url : Str = "https://duckduckgo.com/?q="
+```
+
+`!` and `$` open `terminal -e sh -c '<cmd>; exec $SHELL'`, so the window stays
+open after the command exits. `?` hands the query to `xdg-open`, escaping spaces
+as `+`.
 
 Regenerate the bindings after a raylib upgrade:
 

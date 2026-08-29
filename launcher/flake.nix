@@ -32,6 +32,9 @@
           mkdir -p bin
           ln -sf ${pkgs.raylib}/lib/libraylib.so bin/libraylib.so
           ln -sf ../../library library
+          # The UI font `loadFont "bin/font.ttf"` names, provided by nixpkgs so
+          # the directory stays self-contained (like bin/libraylib.so).
+          ln -sf ${pkgs.jetbrains-mono}/share/fonts/truetype/JetBrainsMono-Regular.ttf bin/font.ttf
           echo "launcher shell ready. Build thrax once in the repo, then:"
           echo "    thrax run MAIN.thx      # or: ../../target/debug/thrax run MAIN.thx"
         '';

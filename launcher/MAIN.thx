@@ -22,10 +22,15 @@ $ with STR
 $ system : Str -> Int = @extern "C" "system" "libc"
 
 # -- palette (ordinary struct literals, passed to raylib by value) -----------
-$ bg        : Color = Color.{ .r = 24,  .g = 24,  .b = 32,  .a = 255 }
-$ btn_col   : Color = Color.{ .r = 45,  .g = 48,  .b = 66,  .a = 255 }
-$ hover_col : Color = Color.{ .r = 70,  .g = 82,  .b = 128, .a = 255 }
-$ text_col  : Color = Color.{ .r = 232, .g = 232, .b = 240, .a = 255 }
+$ bg        : Color = Color.{ .r = 4,   .g = 10,  .b = 22,  .a = 255 }
+$ btn_col   : Color = Color.{ .r = 11,  .g = 22,  .b = 42,  .a = 255 }
+$ hover_col : Color = Color.{ .r = 28,  .g = 58,  .b = 104, .a = 255 }
+$ text_col  : Color = Color.{ .r = 214, .g = 224, .b = 240, .a = 255 }
+
+# -- command-mode config (edit to taste) -------------------------------------
+# The terminal `!` and `$` open, and the URL prefix `?` searches through.
+$ terminal   : Str = "cosmic-term"
+$ search_url : Str = "https://duckduckgo.com/?q="
 
 # -- the launchable programs (edit this list) --------------------------------
 $ App : @struct = label: Str, cmd: Str,
@@ -42,6 +47,18 @@ $ top      : @int32 = 116
 $ btn_w    : @int32 = 380
 $ btn_h    : @int32 = 48
 $ gap      : @int32 = 12
+$ base_w   : @int32 = 420   # window size showing the app list (no output)
+$ base_h   : @int32 = 320
+$ ui_fs      : @float32 = 20.0   # app labels and the search box
+$ out_fs     : @float32 = 18.0   # the captured command output
+$ spacing    : @float32 = 0.0    # raylib glyph spacing (a bare 0.0 defaults to Real)
+$ line_h     : @int32 = 27       # raylib advances ~1.5x the output font per newline
+$ font_atlas : @int32 = 48       # px the glyph atlas is baked at, then scaled down
+
+# int <-> float32 for raylib's text API, whose positions and sizes are @float32
+# (`@cast` crosses only integer widths; `C.i2f`/`C.f2i` bridge int and float).
+$ i2f32 : @int32 -> @float32 = \n = C.i2f (@cast n)
+$ f2i32 : @float32 -> @int32 = \x = @cast (C.f2i x)
 
 $ button_y : @int32 -> @int32 = \i = top + i * (btn_h + gap)
 
@@ -79,9 +96,102 @@ $ filter_apps : @list App -> Str -> @list App = \apps q =
 			let kept = filter_apps rest q in
 			if keep a q => a :: kept else kept
 
+# -- command modes----------------------------------------------------
+# The query's first byte selects a mode: `!` runs a shell command, `?` searches
+# the web, `$` runs a curated tool; anything else just filters the app list.
+$ mode_run    : Int = 33   # '!'
+$ mode_search : Int = 63   # '?'
+$ mode_tool   : Int = 36   # '$'
+
+$ mode_of : Str -> Int = \q = if len q ?> 0 => at q 0 else 0
+
+# Everything after the sigil, whitespace-trimmed.
+$ payload : Str -> Str = \q = if len q ?> 0 => trim (substr q 1 (len q)) else q
+
+# Spawn a shell command in a fresh terminal window that stays open afterward.
+$ in_terminal : Str -> Int = \cmd =
+	system (terminal ++ " -e sh -c '" ++ cmd ++ "; exec $SHELL' &")
+
+# Run a shell command and capture its stdout+stderr as a Str, to show in the
+# window instead of a terminal. `popen` hands back a FILE* as a word-sized Int,
+# exactly like `C.fopen`, so it reads byte by byte to EOF with `C.fgetc`. The
+# read is bounded so a chatty command cannot stall the frame loop.
+$ popen  : {cmd: Str, mode: Str} -> Int = @extern "C" "popen"  "libc"
+$ pclose : Int -> Int                   = @extern "C" "pclose" "libc"
+
+$ is_byte : Int -> @bool = \c = if c ?< 0 => @false else c <= 255
+
+$ drain : Int -> Int -> Str -> Str = \f budget acc =
+	if budget <= 0 => acc
+	else
+		let c = C.fgetc f in
+		if is_byte c => drain f (budget - 1) (@array_push acc c)
+		else acc
+
+$ run_capture : Str -> Str = \cmd =
+	let f = popen {cmd ++ " 2>&1", "r"} in
+	if f ?= 0 => ""
+	else
+		let body = drain f 2000 "" in
+		pclose f;
+		body
+
+# -- window sizing -----------------------------------------------------------
+# The window grows to fit the captured output and shrinks back to the app list.
+$ max_i32 : @int32 -> @int32 -> @int32 = \a b = if a >= b => a else b
+$ min_i32 : @int32 -> @int32 -> @int32 = \a b = if a ?< b => a else b
+
+# How many bytes equal `target` in `s` (the '\n' count gives the line count).
+$ count_byte : Str -> Int -> Int -> Int = \s target i =
+	if i >= len s => 0
+	else (if at s i ?= target => 1 else 0) + count_byte s target (i + 1)
+
+# Width in pixels of one line of `s` drawn in `font` at `out_fs`.
+$ line_w : Font -> Str -> @int32 = \font s =
+	let m = measureTextEx { .p0 = font, .p1 = s, .p2 = out_fs, .p3 = spacing } in
+	f2i32 m.x
+
+# Width in pixels of the widest line of `s`. Walks line by line (`start` is the
+# current line's first byte), measuring each with the loaded font.
+$ widest : Font -> Str -> Int -> Int -> @int32 -> @int32 = \font s start i acc =
+	if i >= len s => max_i32 acc (line_w font (substr s start (len s)))
+	else if at s i ?= 10 =>
+		widest font s (i + 1) (i + 1) (max_i32 acc (line_w font (substr s start i)))
+	else widest font s start (i + 1) acc
+
+# Resize the window to hold `output`: base size when empty, otherwise wide
+# enough for the longest line and tall enough for every line, both capped so a
+# pathological command cannot fill the screen.
+$ fit_window : Font -> Str -> {} = \font output =
+	if is_empty output => setWindowSize { .p0 = base_w, .p1 = base_h }
+	else
+		let lines : @int32 = @cast (1 + count_byte output 10 0),
+		    w = min_i32 1200 (max_i32 base_w (widest font output 0 0 0 + 2 * pad)),
+		    h = min_i32 800 (top + lines * line_h + pad) in
+		setWindowSize { .p0 = w, .p1 = h }
+
+# Draw `s` at (x, y) in `font`; positions and the size cross to @float32 here.
+$ text : Font -> Str -> @int32 -> @int32 -> @float32 -> Color -> {} =
+	\font s x y size col =
+		drawTextEx { .p0 = font, .p1 = s,
+		             .p2 = Vector2.{ .x = i2f32 x, .y = i2f32 y },
+		             .p3 = size, .p4 = spacing, .p5 = col }
+
+# Hand the query to the web browser as a search, spaces percent-escaped as `+`.
+$ open_search : Str -> Int = \q =
+	system ("xdg-open '" ++ search_url ++ replace q " " "+" ++ "' &")
+
+# Curated `$name` tools. An empty result means "no such tool".
+$ tool_cmd : Str -> Str = \name =
+	if eq name "time" => "date"
+	else if eq name "cal"  => "cal"
+	else if eq name "disk" => "df -h"
+	else if eq name "mem"  => "free -h"
+	else ""
+
 # -- rendering ---------------------------------------------------------------
-$ draw_apps : @list App -> @int32 -> @int32 -> @int32 -> {} =
-	\apps i mx my =
+$ draw_apps : Font -> @list App -> @int32 -> @int32 -> @int32 -> {} =
+	\font apps i mx my =
 		is apps
 			| [] => {}
 			| a :: rest =>
@@ -89,20 +199,23 @@ $ draw_apps : @list App -> @int32 -> @int32 -> @int32 -> {} =
 				    hover = in_box mx my pad y btn_w btn_h,
 				    col = if hover ?= 1 => hover_col else btn_col in
 				drawRectangle { .p0 = pad, .p1 = y, .p2 = btn_w, .p3 = btn_h, .p4 = col } ;
-				drawText { .p0 = a.label, .p1 = pad + 16, .p2 = y + 14, .p3 = 20, .p4 = text_col } ;
-				draw_apps rest (i + 1) mx my
+				text font a.label (pad + 16) (y + 14) ui_fs text_col ;
+				draw_apps font rest (i + 1) mx my
 
 # What the search box shows: a prompt when empty, else the query with a caret.
-$ search_text : Str -> Str = \q = if is_empty q => "Type to search..." else q ++ "_"
+$ search_text : Str -> Str = \q =
+	if is_empty q => "search  ! run  ? web  $ tools" else q ++ "_"
 
-$ render : Str -> @list App -> @int32 -> @int32 -> {} =
-	\query visible mx my =
+$ render : Font -> Str -> Str -> @list App -> @int32 -> @int32 -> {} =
+	\font query output visible mx my =
+		fit_window font output ;
 		beginDrawing {} ;
 		clearBackground bg ;
-		drawText { .p0 = "Thrax Launcher", .p1 = pad, .p2 = 16, .p3 = 24, .p4 = text_col } ;
 		drawRectangle { .p0 = pad, .p1 = search_y, .p2 = btn_w, .p3 = btn_h, .p4 = btn_col } ;
-		drawText { .p0 = search_text query, .p1 = pad + 12, .p2 = search_y + 14, .p3 = 20, .p4 = text_col } ;
-		draw_apps visible 0 mx my ;
+		text font (search_text query) (pad + 12) (search_y + 14) ui_fs text_col ;
+		(if is_empty output
+			=> draw_apps font visible 0 mx my
+			else text font output pad top out_fs text_col) ;
 		endDrawing {}
 
 # On a click, find the button under the cursor and spawn its program.
@@ -116,23 +229,50 @@ $ click : @list App -> @int32 -> @int32 -> @int32 -> Int =
 				else click rest (i + 1) mx my
 
 # -- frame loop --------------------------------------------------------------
+# Enter commits the query by its mode. `!` runs a shell command and shows its
+# output in the window (the box clears); `?` opens a web search; `$name` runs a
+# curated tool and shows its output, or leaves the query when the name is
+# unknown. Plain-filter Enter is a no-op (apps still launch on click). The
+# second argument is the output currently on screen, preserved across modes
+# that produce none.
+$ Next : @struct = q: Str, out: Str,
+
+$ commit : Str -> Str -> Next = \q out =
+	is mode_of q
+		| mode_run    => Next.{ .q = "", .out = run_capture (payload q) }
+		| mode_search => let _ = open_search (payload q) in Next.{ .q = "", .out = out }
+		| mode_tool =>
+			let cmd = tool_cmd (payload q) in
+			if is_empty cmd => Next.{ .q = q, .out = out }
+			else Next.{ .q = "", .out = run_capture cmd }
+		else Next.{ .q = q, .out = out }
+
+$ enter_pressed : {} -> @int32 = \u =
+	if isKeyPressed key_enter ?= 1 || isKeyPressed key_kp_enter ?= 1 => 1 else 0
+
 # The query string is the loop's state: each frame folds in the keyboard, filters
 # the app list, and clicks land on the FILTERED list (so a click hits what's shown).
-$ loop : Str -> {} = \query =
+$ loop : Font -> Str -> Str -> {} = \font query output =
 	if windowShouldClose {} ?= 0 =>
 		let q = edit_query query,
+		    out = if isKeyPressed key_escape ?= 1 => "" else output,
 		    visible = filter_apps apps q,
 		    mx = getMouseX {},
 		    my = getMouseY {} in
-		render q visible mx my ;
+		render font q out visible mx my ;
 		(if isMouseButtonPressed mouse_button_left ?= 1
 			=> let _ = click visible 0 mx my in {}
 			else {}) ;
-		loop q
+		if enter_pressed {} ?= 1 =>
+			let n = commit q out in loop font n.q n.out
+		else loop font q out
 	else closeWindow {}
 
 $ main : {} -> <| e> Int = \u =
-	initWindow { .p0 = 420, .p1 = 320, .p2 = "Thrax Launcher" } ;
-	setTargetFPS 60 ;
-	loop "" ;
+	setConfigFlags (@cast flag_window_undecorated);
+	initWindow { .p0 = base_w, .p1 = base_h, .p2 = "" };
+	setTargetFPS 60;
+	let font = loadFontEx { .p0 = "bin/font.ttf", .p1 = font_atlas, .p2 = C.null, .p3 = 0 } in
+	setTextureFilter { .p0 = font.texture, .p1 = texture_filter_bilinear };
+	loop font "" "";
 	0
