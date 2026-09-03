@@ -16,11 +16,16 @@
 
           # Runtime deps of libraylib.so, so a window can open.
           pkgs.libGL
-          pkgs.xorg.libX11
-          pkgs.xorg.libXcursor
-          pkgs.xorg.libXi
-          pkgs.xorg.libXinerama
-          pkgs.xorg.libXrandr
+          pkgs.libx11
+          pkgs.libxcursor
+          pkgs.libxi
+          pkgs.libxinerama
+          pkgs.libxrandr
+
+          # External tools the launcher shells out to (via popen/system):
+          pkgs.gawk # the embedded desktop-file scan in `list_apps_cmd`
+          pkgs.coreutils # sort (dedup the scan), timeout (bound `!` commands)
+          pkgs.xdg-utils # xdg-open (the `?` web search)
         ];
 
         # Make this directory self-contained: `bin/libraylib.so` is the library

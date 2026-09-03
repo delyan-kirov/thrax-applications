@@ -24,21 +24,27 @@ $ system : Str -> Int = @extern "C" "system" "libc"
 # -- palette (ordinary struct literals, passed to raylib by value) -----------
 $ bg        : Color = Color.{ .r = 4,   .g = 10,  .b = 22,  .a = 255 }
 $ btn_col   : Color = Color.{ .r = 11,  .g = 22,  .b = 42,  .a = 255 }
-$ hover_col : Color = Color.{ .r = 28,  .g = 58,  .b = 104, .a = 255 }
+$ hover_col : Color = Color.{ .r = 11,  .g = 20,  .b = 46,  .a = 255 }   # dark navy highlight
 $ text_col  : Color = Color.{ .r = 214, .g = 224, .b = 240, .a = 255 }
+$ sep_col   : Color = Color.{ .r = 40,  .g = 60,  .b = 92,  .a = 255 }   # row divider lines
 
 # -- command-mode config (edit to taste) -------------------------------------
 # The terminal `!` and `$` open, and the URL prefix `?` searches through.
-$ terminal   : Str = "cosmic-term"
-$ search_url : Str = "https://duckduckgo.com/?q="
+$ terminal    : Str = "cosmic-term"
+$ search_url  : Str = "https://duckduckgo.com/?q="
+$ cmd_timeout : Str = "2"   # seconds a captured `!`/`$` command may run before it is killed
 
-# -- the launchable programs (edit this list) --------------------------------
-$ App : @struct = label: Str, cmd: Str,
+# -- the launchable programs --------------------------------------------------
+# The list is DISCOVERED at startup from the system's `.desktop` files (see
+# `discover` below). This hardcoded set is only the fallback when none are found.
+# `cmd` is the raw program to run (no trailing `&`); `terminal` marks a CLI/TUI
+# app (`Terminal=true` in its desktop entry) that must run inside a terminal.
+$ App : @struct = label: Str, cmd: Str, terminal: @bool,
 
-$ apps : @list App =
-	[ App.{ .label = "Terminal", .cmd = "xterm &" }
-	, App.{ .label = "Files",    .cmd = "xdg-open . &" }
-	, App.{ .label = "Browser",  .cmd = "firefox &" } ]
+$ fallback_apps : @list App =
+	[ App.{ .label = "Terminal", .cmd = "xterm",      .terminal = @false }
+	, App.{ .label = "Files",    .cmd = "xdg-open .", .terminal = @false }
+	, App.{ .label = "Browser",  .cmd = "firefox",    .terminal = @false } ]
 
 # -- layout ------------------------------------------------------------------
 $ pad      : @int32 = 20
@@ -52,8 +58,11 @@ $ base_h   : @int32 = 320
 $ ui_fs      : @float32 = 20.0   # app labels and the search box
 $ out_fs     : @float32 = 18.0   # the captured command output
 $ spacing    : @float32 = 0.0    # raylib glyph spacing (a bare 0.0 defaults to Real)
+$ round_amt  : @float32 = 0.2    # hover-box roundness (0 = sharp box, small = softly rounded)
+$ round_seg  : @int32 = 16       # corner smoothness of the hover box
 $ line_h     : @int32 = 27       # raylib advances ~1.5x the output font per newline
 $ font_atlas : @int32 = 48       # px the glyph atlas is baked at, then scaled down
+$ max_list_h : @int32 = 760      # tallest the app-list window grows before it scrolls
 
 # int <-> float32 for raylib's text API, whose positions and sizes are @float32
 # (`@cast` crosses only integer widths; `C.i2f`/`C.f2i` bridge int and float).
@@ -61,6 +70,12 @@ $ i2f32 : @int32 -> @float32 = \n = C.i2f (@cast n)
 $ f2i32 : @float32 -> @int32 = \x = @cast (C.f2i x)
 
 $ button_y : @int32 -> @int32 = \i = top + i * (btn_h + gap)
+
+# One list row is a button plus its trailing gap. `rows_fit` is how many rows fit
+# before `max_list_h`; `list_height` is the window height that shows `rows` of them.
+$ row_stride : @int32 = btn_h + gap
+$ rows_fit   : @int32 = (max_list_h - top) / row_stride
+$ list_height : @int32 -> @int32 = \rows = top + rows * row_stride + pad
 
 # Is (mx, my) inside the axis-aligned box at (x, y) of size (w, h)?
 $ in_box : @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> Int =
@@ -96,6 +111,14 @@ $ filter_apps : @list App -> Str -> @list App = \apps q =
 			let kept = filter_apps rest q in
 			if keep a q => a :: kept else kept
 
+# How many apps in the list, and dropping the first `n` (for the scroll offset).
+$ app_count : @list App -> @int32 -> @int32 = \apps acc =
+	is apps | [] => acc | _ :: rest => app_count rest (acc + 1)
+
+$ drop_apps : @list App -> @int32 -> @list App = \apps n =
+	if n <= 0 => apps
+	else is apps | [] => [] | _ :: rest => drop_apps rest (n - 1)
+
 # -- command modes----------------------------------------------------
 # The query's first byte selects a mode: `!` runs a shell command, `?` searches
 # the web, `$` runs a curated tool; anything else just filters the app list.
@@ -111,6 +134,12 @@ $ payload : Str -> Str = \q = if len q ?> 0 => trim (substr q 1 (len q)) else q
 # Spawn a shell command in a fresh terminal window that stays open afterward.
 $ in_terminal : Str -> Int = \cmd =
 	system (terminal ++ " -e sh -c '" ++ cmd ++ "; exec $SHELL' &")
+
+# Launch an app: a `Terminal=true` (CLI/TUI) app runs inside a terminal window,
+# everything else is spawned fire-and-forget as a background GUI process.
+$ launch : App -> Int = \a =
+	if a.terminal => in_terminal a.cmd
+	else system (a.cmd ++ " &")
 
 # Run a shell command and capture its stdout+stderr as a Str, to show in the
 # window instead of a terminal. `popen` hands back a FILE* as a word-sized Int,
@@ -128,13 +157,101 @@ $ drain : Int -> Int -> Str -> Str = \f budget acc =
 		if is_byte c => drain f (budget - 1) (@array_push acc c)
 		else acc
 
+# Single-quote a string for the shell, so the whole command reaches one `sh -c`
+# as a single argument (spaces, pipes and `;` included). A literal `'` becomes
+# `'\''`: close the quote, an escaped quote, reopen.
+$ shell_quote : Str -> Str = \s = "'" ++ replace s "'" "'\\''" ++ "'"
+
+# `pclose` hands back a wait(2) status; `timeout` exits 124 when it had to kill
+# the command, which sits in the high byte (WEXITSTATUS).
+$ timed_out : Int -> @bool = \status = (status / 256) % 256 ?= 124
+
+# Run a shell command under `timeout` and capture its stdout+stderr. If it runs
+# longer than `cmd_timeout` seconds it is killed and the window shows a timeout
+# message instead of partial output. The command runs inside its own `sh -c` so
+# `timeout` covers the whole pipeline, not just the first word.
 $ run_capture : Str -> Str = \cmd =
-	let f = popen {cmd ++ " 2>&1", "r"} in
+	let wrapped = "timeout -k 1 " ++ cmd_timeout ++ " sh -c " ++ shell_quote cmd ++ " 2>&1" in
+	let f = popen {wrapped, "r"} in
 	if f ?= 0 => ""
 	else
 		let body = drain f 2000 "" in
+		let status = pclose f in
+		if timed_out status => "command timed out" else body
+
+# Like `run_capture` but with a large budget: the app list can be hundreds of
+# lines. `drain` recurses in tail position, so a big budget is safe.
+$ capture_all : Str -> Str = \cmd =
+	let f = popen {cmd, "r"} in
+	if f ?= 0 => ""
+	else
+		let body = drain f 200000 "" in
 		pclose f;
 		body
+
+# -- clock -------------------------------------------------------------------
+# The day and time shown in the header, from libc `ctime` (no `date` fork, so it
+# is cheap enough to recompute every frame). `time` wants a `time_t*`, so `le8`
+# serializes the current epoch into an 8-byte little-endian buffer to hand it as
+# an INPUT pointer (the FFI copies byte-buffer arguments, which is fine for an
+# input). `ctime` returns the fixed "Www Mmm dd hh:mm:ss yyyy\n"; we keep the
+# "Www Mmm dd" date and the "hh:mm" time, dropping seconds and year.
+$ ctime : Str -> Str = @extern "C" "ctime" "libc"
+
+$ le8 : Int -> Int -> Str = \t k =
+	if k >= 8 => "" else (@array_push "" (t % 256)) ++ le8 (t / 256) (k + 1)
+
+$ clock_str : {} -> Str = \u =
+	let s = ctime (le8 (C.time 0) 0) in
+	substr s 0 10 ++ "   " ++ substr s 11 16
+
+# -- app discovery -----------------------------------------------------------
+# Collect the `.desktop` file paths in every XDG `applications` directory and let
+# one embedded `awk` pass extract `Name<TAB>Exec<TAB>Terminal`. This runs outside
+# Thrax on purpose: the same scan in the interpreter (reading and string-parsing
+# ~150 files) is tens of seconds; awk does it in ~40 ms and Thrax only splits the
+# resulting handful of lines. The awk program reads only the `[Desktop Entry]`
+# group, strips `Exec` field codes (`%f`, ...), and drops hidden/non-app entries.
+# (In the awk source, `{` is escaped `\{` and `[` `\\[` so the Thrax string lexer
+# leaves them alone.)
+$ list_apps_cmd : Str =
+	"dirs=\"$XDG_DATA_HOME\"; [ -n \"$dirs\" ] || dirs=\"$HOME/.local/share\"; "
+	++ "more=\"$XDG_DATA_DIRS\"; [ -n \"$more\" ] || more=\"/usr/local/share:/usr/share\"; "
+	++ "all=\"$dirs:$more\"; "
+	++ "( IFS=:; set --; for d in $all; do for f in \"$d\"/applications/*.desktop; do "
+	++ "[ -f \"$f\" ] && set -- \"$@\" \"$f\"; done; done; "
+	++ "awk '"
+	++ "function emit() \{ if (nd != \"true\" && ty == \"Application\" && nm != \"\" && ex != \"\") printf \"%s\\t%s\\t%s\\n\", nm, ex, (tolower(tm) == \"true\" ? 1 : 0) }\n"
+	++ "FNR == 1 \{ if (started) emit(); started = 1; nm = \"\"; ex = \"\"; tm = \"\"; nd = \"\"; ty = \"\"; ine = 0 }\n"
+	++ "/^\\[Desktop Entry\\]/ \{ ine = 1; next }\n"
+	++ "/^\\[/ \{ ine = 0; next }\n"
+	++ "!ine \{ next }\n"
+	++ "/^Name=/ && nm == \"\" \{ nm = substr($0, 6) }\n"
+	++ "/^Exec=/ && ex == \"\" \{ ex = substr($0, 6); gsub(/ *%[a-zA-Z]/, \"\", ex) }\n"
+	++ "/^Terminal=/ \{ tm = substr($0, 10) }\n"
+	++ "/^NoDisplay=/ \{ nd = substr($0, 11) }\n"
+	++ "/^Type=/ \{ ty = substr($0, 6) }\n"
+	++ "END \{ if (started) emit() }"
+	++ "' \"$@\" 2>/dev/null ) | sort -u"
+
+# Split the captured `Name<TAB>Exec<TAB>Terminal` lines into apps (a small list,
+# so doing this in Thrax is cheap). The command is stored raw; `launch` decides
+# how to spawn it.
+$ apps_from_lines : @list Str -> @list App = \ls =
+	is ls
+		| [] => []
+		| line :: rest =>
+			is split line "\t"
+				| name :: cmd :: term :: _ =>
+					App.{ .label = name, .cmd = cmd, .terminal = term ?= "1" } :: apps_from_lines rest
+				| _ => apps_from_lines rest
+
+# Discover installed apps at startup; fall back to the hardcoded list if the
+# scan turns up nothing (e.g. a system with no `.desktop` files).
+$ discover : {} -> @list App = \u =
+	is apps_from_lines (lines (capture_all list_apps_cmd))
+		| [] => fallback_apps
+		| found => found
 
 # -- window sizing -----------------------------------------------------------
 # The window grows to fit the captured output and shrinks back to the app list.
@@ -159,11 +276,12 @@ $ widest : Font -> Str -> Int -> Int -> @int32 -> @int32 = \font s start i acc =
 		widest font s (i + 1) (i + 1) (max_i32 acc (line_w font (substr s start i)))
 	else widest font s start (i + 1) acc
 
-# Resize the window to hold `output`: base size when empty, otherwise wide
-# enough for the longest line and tall enough for every line, both capped so a
-# pathological command cannot fill the screen.
-$ fit_window : Font -> Str -> {} = \font output =
-	if is_empty output => setWindowSize { .p0 = base_w, .p1 = base_h }
+# Resize the window to hold what it shows. With no output it fits the app list:
+# it grows with the number of visible rows (`rows`, already capped to `rows_fit`)
+# and never shrinks below `base_h`. With output it grows wide enough for the
+# longest line and tall enough for every line, both capped against the screen.
+$ fit_window : Font -> Str -> @int32 -> {} = \font output rows =
+	if is_empty output => setWindowSize { .p0 = base_w, .p1 = max_i32 base_h (list_height rows) }
 	else
 		let lines : @int32 = @cast (1 + count_byte output 10 0),
 		    w = min_i32 1200 (max_i32 base_w (widest font output 0 0 0 + 2 * pad)),
@@ -190,82 +308,145 @@ $ tool_cmd : Str -> Str = \name =
 	else ""
 
 # -- rendering ---------------------------------------------------------------
-$ draw_apps : Font -> @list App -> @int32 -> @int32 -> @int32 -> {} =
-	\font apps i mx my =
-		is apps
+# A hovered row is a filled rounded ("oval") box; an idle row is just its label
+# fenced by two thin divider lines (top and bottom edges).
+$ draw_row : @int32 -> Int -> {} = \y hover =
+	if hover ?= 1
+		=> drawRectangleRounded
+			{ .p0 = Rectangle.{ .x = i2f32 pad, .y = i2f32 y,
+			                    .width = i2f32 btn_w, .height = i2f32 btn_h },
+			  .p1 = round_amt, .p2 = round_seg, .p3 = hover_col }
+	else
+		(drawLine { .p0 = pad, .p1 = y,         .p2 = pad + btn_w, .p3 = y,         .p4 = sep_col } ;
+		 drawLine { .p0 = pad, .p1 = y + btn_h, .p2 = pad + btn_w, .p3 = y + btn_h, .p4 = sep_col })
+
+# Draw at most `budget` rows starting at display row `i` (the list is already
+# offset by the scroll position, so `i` runs from 0 at the top of the window).
+$ draw_apps : Font -> @list App -> @int32 -> @int32 -> @int32 -> @int32 -> {} =
+	\font apps i budget mx my =
+		if budget <= 0 => {}
+		else is apps
 			| [] => {}
 			| a :: rest =>
 				let y = button_y i,
-				    hover = in_box mx my pad y btn_w btn_h,
-				    col = if hover ?= 1 => hover_col else btn_col in
-				drawRectangle { .p0 = pad, .p1 = y, .p2 = btn_w, .p3 = btn_h, .p4 = col } ;
+				    hover = in_box mx my pad y btn_w btn_h in
+				draw_row y hover ;
 				text font a.label (pad + 16) (y + 14) ui_fs text_col ;
-				draw_apps font rest (i + 1) mx my
+				draw_apps font rest (i + 1) (budget - 1) mx my
 
-# What the search box shows: a prompt when empty, else the query with a caret.
-$ search_text : Str -> Str = \q =
-	if is_empty q => "search  ! run  ? web  $ tools" else q ++ "_"
+# What the search box shows: the query with a trailing caret (just the caret when
+# empty, so there is no mode-hint text cluttering the box).
+$ search_text : Str -> Str = \q = q ++ "_"
 
-$ render : Font -> Str -> Str -> @list App -> @int32 -> @int32 -> {} =
-	\font query output visible mx my =
-		fit_window font output ;
+# `shown` is the already-scrolled slice of the app list; `rows` is how many of it
+# are visible (drives both the window height and how many rows get drawn). The
+# day-and-time header is recomputed here every frame (cheap: no fork).
+$ render : Font -> Str -> Str -> @list App -> @int32 -> @int32 -> @int32 -> {} =
+	\font query output shown rows mx my =
+		fit_window font output rows ;
 		beginDrawing {} ;
 		clearBackground bg ;
+		text font (clock_str {}) (pad + 12) 14 ui_fs sep_col ;
 		drawRectangle { .p0 = pad, .p1 = search_y, .p2 = btn_w, .p3 = btn_h, .p4 = btn_col } ;
 		text font (search_text query) (pad + 12) (search_y + 14) ui_fs text_col ;
 		(if is_empty output
-			=> draw_apps font visible 0 mx my
+			=> draw_apps font shown 0 rows mx my
 			else text font output pad top out_fs text_col) ;
 		endDrawing {}
 
-# On a click, find the button under the cursor and spawn its program.
-$ click : @list App -> @int32 -> @int32 -> @int32 -> Int =
-	\apps i mx my =
-		is apps
+# On a click, find the button under the cursor and spawn its program. Returns 1
+# when a button was hit (so the loop can close the launcher), 0 otherwise. Only
+# the `budget` visible rows are hit-tested, matching what `draw_apps` drew.
+$ click : @list App -> @int32 -> @int32 -> @int32 -> @int32 -> Int =
+	\apps i budget mx my =
+		if budget <= 0 => 0
+		else is apps
 			| [] => 0
 			| a :: rest =>
 				let y = button_y i in
-				if in_box mx my pad y btn_w btn_h ?= 1 => system a.cmd
-				else click rest (i + 1) mx my
+				if in_box mx my pad y btn_w btn_h ?= 1 => launch a ; 1
+				else click rest (i + 1) (budget - 1) mx my
 
 # -- frame loop --------------------------------------------------------------
 # Enter commits the query by its mode. `!` runs a shell command and shows its
 # output in the window (the box clears); `?` opens a web search; `$name` runs a
 # curated tool and shows its output, or leaves the query when the name is
-# unknown. Plain-filter Enter is a no-op (apps still launch on click). The
-# second argument is the output currently on screen, preserved across modes
-# that produce none.
-$ Next : @struct = q: Str, out: Str,
+# unknown. A plain query launches the FIRST app in the filtered list (nothing
+# happens if the list is empty). `out` is the output currently on screen,
+# preserved across modes that produce none.
+# `done` asks the loop to close the window: set when the launcher has handed off
+# and has nothing more to show (a web search, or launching an app).
+$ Next : @struct = q: Str, out: Str, done: @bool,
 
-$ commit : Str -> Str -> Next = \q out =
-	is mode_of q
-		| mode_run    => Next.{ .q = "", .out = run_capture (payload q) }
-		| mode_search => let _ = open_search (payload q) in Next.{ .q = "", .out = out }
-		| mode_tool =>
-			let cmd = tool_cmd (payload q) in
-			if is_empty cmd => Next.{ .q = q, .out = out }
-			else Next.{ .q = "", .out = run_capture cmd }
-		else Next.{ .q = q, .out = out }
+# Dispatch by mode with explicit `?=` on the sigil byte. A `when`/`is` arm named
+# by a lowercase binding would BIND (match anything) rather than compare, so the
+# first arm would always win; comparing the values is what makes each mode fire.
+$ commit : Str -> Str -> @list App -> Next = \q out visible =
+	let m = mode_of q in
+	if m ?= mode_run => Next.{ .q = "", .out = run_capture (payload q), .done = @false }
+	else if m ?= mode_search =>
+		open_search (payload q) ; Next.{ .q = "", .out = out, .done = @true }
+	else if m ?= mode_tool =>
+		let cmd = tool_cmd (payload q) in
+		if is_empty cmd => Next.{ .q = q, .out = out, .done = @false }
+		else Next.{ .q = "", .out = run_capture cmd, .done = @false }
+	else is visible
+		| [] => Next.{ .q = q, .out = out, .done = @false }
+		| a :: _ => launch a ; Next.{ .q = q, .out = out, .done = @true }
 
 $ enter_pressed : {} -> @int32 = \u =
 	if isKeyPressed key_enter ?= 1 || isKeyPressed key_kp_enter ?= 1 => 1 else 0
 
-# The query string is the loop's state: each frame folds in the keyboard, filters
-# the app list, and clicks land on the FILTERED list (so a click hits what's shown).
-$ loop : Font -> Str -> Str -> {} = \font query output =
+# A key fires this frame if pressed now or auto-repeating (so a held arrow key
+# keeps scrolling).
+$ key_step : @int32 -> @bool = \k = isKeyPressed k ?= 1 || isKeyPressedRepeat k ?= 1
+
+# This frame's scroll intent in list rows: mouse wheel (a notch is ±1), arrow
+# keys by one row, page keys by a whole page. Positive scrolls DOWN the list.
+$ scroll_delta : {} -> @int32 = \u =
+	let wheel = 0 - f2i32 (getMouseWheelMove {}),
+	    keys = (if key_step key_down => 1 else 0) - (if key_step key_up => 1 else 0),
+	    pages = (if key_step key_page_down => rows_fit else 0)
+	          - (if key_step key_page_up => rows_fit else 0) in
+	wheel + keys + pages
+
+# Clamp `off` into [0, n - rows_fit]: never past the last full page, never below 0.
+$ clamp_off : @int32 -> @int32 -> @int32 = \off n =
+	max_i32 0 (min_i32 off (max_i32 0 (n - rows_fit)))
+
+# The loop's state is the app list, the query, the on-screen output, the scroll
+# offset, and whether the app list has been scanned yet. The scan is LAZY: nothing
+# shows until the user starts typing, at which point `discover` runs once; after
+# that, clearing the query shows every app. Each frame folds in the keyboard,
+# filters, and scrolls; clicks and the drawn rows use the SAME slice so they line
+# up. Launching an app (click or plain Enter) or a web search closes the launcher.
+$ loop : Font -> @list App -> Str -> Str -> @int32 -> @bool -> {} =
+	\font all query output off loaded =
 	if windowShouldClose {} ?= 0 =>
 		let q = edit_query query,
-		    out = if isKeyPressed key_escape ?= 1 => "" else output,
-		    visible = filter_apps apps q,
+		    out = if isKeyPressed key_escape ?= 1 => ""
+		          else if q ?= query => output
+		          else "",
+		    typed = if is_empty q => @false else @true,
+		    all2 = if loaded => all else if typed => discover {} else all,
+		    loaded2 = if loaded => @true else typed,
+		    visible = filter_apps all2 q,
+		    n = app_count visible 0,
+		    base = if q ?= query => off else 0,
+		    off2 = clamp_off (base + scroll_delta {}) n,
+		    rows = min_i32 n rows_fit,
+		    shown = drop_apps visible off2,
 		    mx = getMouseX {},
 		    my = getMouseY {} in
-		render font q out visible mx my ;
-		(if isMouseButtonPressed mouse_button_left ?= 1
-			=> let _ = click visible 0 mx my in {}
-			else {}) ;
-		if enter_pressed {} ?= 1 =>
-			let n = commit q out in loop font n.q n.out
-		else loop font q out
+		render font q out shown rows mx my ;
+		let launched =
+			if isMouseButtonPressed mouse_button_left ?= 1 => click shown 0 rows mx my
+			else 0 in
+		if launched ?= 1 => closeWindow {}
+		else if enter_pressed {} ?= 1 =>
+			let nx = commit q out visible in
+			if nx.done => closeWindow {} else loop font all2 nx.q nx.out off2 loaded2
+		else loop font all2 q out off2 loaded2
 	else closeWindow {}
 
 $ main : {} -> <| e> Int = \u =
@@ -274,5 +455,8 @@ $ main : {} -> <| e> Int = \u =
 	setTargetFPS 60;
 	let font = loadFontEx { .p0 = "bin/font.ttf", .p1 = font_atlas, .p2 = C.null, .p3 = 0 } in
 	setTextureFilter { .p0 = font.texture, .p1 = texture_filter_bilinear };
-	loop font "" "";
+	# Present an empty frame so the window is on screen instantly; the app list is
+	# scanned lazily, on the first keystroke (see `loop`).
+	render font "" "" [] 0 (getMouseX {}) (getMouseY {}) ;
+	loop font [] "" "" 0 @false;
 	0

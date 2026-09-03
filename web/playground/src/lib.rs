@@ -17,6 +17,7 @@ use frontend::{Ast, Item, Program};
 fn stdlib_source(name: &str) -> Option<&'static str> {
     Some(match name {
         "C" => include_str!("../../../../library/C.thx"),
+        "CORE" => include_str!("../../../../library/CORE.thx"),
         "LIST" => include_str!("../../../../library/LIST.thx"),
         "MAP" => include_str!("../../../../library/MAP.thx"),
         "SET" => include_str!("../../../../library/SET.thx"),
@@ -114,6 +115,11 @@ fn gather_sources(root_src: &str) -> Result<Vec<(String, String)>, String> {
     }
     if !names.iter().any(|n| n == "C") {
         sources.push(("C".to_string(), stdlib_source("C").unwrap().to_string()));
+    }
+    // CORE is implicitly imported into every module (its `to_string` and the
+    // `+ - * / %` operator overloads), so always bundle it, even if unimported.
+    if !names.iter().any(|n| n == "CORE") {
+        sources.push(("CORE".to_string(), stdlib_source("CORE").unwrap().to_string()));
     }
     Ok(sources)
 }
@@ -224,19 +230,27 @@ fn pipeline(user_src: &str) -> Result<(Vec<LoweredProgram>, String), String> {
         }
     }
 
-    // Type-check in dependency order, `C` first (qualified-only elsewhere).
+    // Type-check in dependency order, `C` and `CORE` first: `C` qualified-only
+    // (`C.sqrt`), `CORE` bare (its `to_string` and operator overloads), injected
+    // into every other module. Mirrors the driver.
     let c_idx = sources.iter().position(|(n, _)| n == "C");
+    let core_idx = sources.iter().position(|(n, _)| n == "CORE");
     let mut order = topological_order(&graph);
-    if let Some(c) = c_idx {
-        order.retain(|&i| i != c);
-        order.insert(0, c);
+    for &pre in [core_idx, c_idx].iter().flatten() {
+        order.retain(|&i| i != pre);
+        order.insert(0, pre);
     }
     let mut checkers: Vec<Option<frontend::Checker>> = (0..programs.len()).map(|_| None).collect();
     for i in order {
         let mut checker = frontend::Checker::new(&ast);
         if let Some(c) = c_idx {
-            if c != i {
+            if c != i && Some(i) != core_idx {
                 checker.import_qualified(checkers[c].as_ref().expect("C checked first"));
+            }
+        }
+        if let Some(core) = core_idx {
+            if core != i && Some(i) != c_idx {
+                checker.import_from(checkers[core].as_ref().expect("CORE checked first"));
             }
         }
         for &dep in &graph[i] {
