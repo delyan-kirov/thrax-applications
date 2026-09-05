@@ -1,0 +1,17 @@
+# The browser playground crate (web/playground) builds for wasm32-unknown-unknown.
+# nixpkgs rustc ships that target's std but no bundled rust-lld, so link with the
+# wasm-ld the web dev shell puts on PATH (applications/web/flake.nix: pkgs.lld).
+# Applies only to that target; host builds (launcher, etc.) are unaffected.
+[target.wasm32-unknown-unknown]
+linker = "wasm-ld"
+# panic = abort so a panicking program traps cleanly instead of pulling in
+# unwinding imports the bare wasm host would have to supply.
+# --import-undefined turns the interpreter's undefined `thx_host_*` symbols (the
+# JS host-call interface, an `extern "C"` block with no import attribute) into
+# wasm function imports the embedder supplies at instantiation, instead of a
+# link error. Without it the documented plain build command fails to link.
+rustflags = [
+    "-Clinker-flavor=wasm-ld",
+    "-Cpanic=abort",
+    "-Clink-arg=--import-undefined",
+]
