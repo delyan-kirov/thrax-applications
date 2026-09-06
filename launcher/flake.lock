@@ -16,9 +16,44 @@
         "type": "github"
       }
     },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1781577229,
+        "narHash": "sha256-lrp67w8AulE9Ks53n27I45ADSzbOCn4H+CNW1Ck8B+8=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "567a49d1913ce81ac6e9582e3553dd90a955875f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "thrax": "thrax"
+      }
+    },
+    "thrax": {
+      "inputs": {
+        "nixpkgs": "nixpkgs_2"
+      },
+      "locked": {
+        "lastModified": 1788710058,
+        "narHash": "sha256-aqqIg2oySUMPz4jtJUvihHdUAEpAckUf1zKSiue7T10=",
+        "owner": "delyan-kirov",
+        "repo": "Thrax",
+        "rev": "077b447ea5d34e44332f2608b6b8e3142e0313bc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "delyan-kirov",
+        "repo": "Thrax",
+        "type": "github"
       }
     }
   },

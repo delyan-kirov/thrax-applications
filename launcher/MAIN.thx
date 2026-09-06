@@ -19,7 +19,7 @@ $ with STR
 
 # Spawn a program (fire-and-forget) via libc. The `&` in the command returns at
 # once. Not part of raylib, so it stays a local `@extern`.
-$ system : Str -> Int = @extern "C" "system" "libc"
+$ system : @str -> @int = @extern "C" "system" "libc"
 
 # -- palette (ordinary struct literals, passed to raylib by value) -----------
 $ bg        : Color = Color.{ .r = 4,   .g = 10,  .b = 22,  .a = 255 }
@@ -30,18 +30,18 @@ $ sep_col   : Color = Color.{ .r = 40,  .g = 60,  .b = 92,  .a = 255 }   # row d
 
 # -- command-mode config (edit to taste) -------------------------------------
 # The terminal `!` and `$` open, and the URL prefix `?` searches through.
-$ terminal    : Str = "cosmic-term"
-$ search_url  : Str = "https://duckduckgo.com/?q="
-$ cmd_timeout : Str = "2"   # seconds a captured `!`/`$` command may run before it is killed
+$ terminal    : @str = "cosmic-term"
+$ search_url  : @str = "https://duckduckgo.com/?q="
+$ cmd_timeout : @str = "2"   # seconds a captured `!`/`$` command may run before it is killed
 
 # -- the launchable programs --------------------------------------------------
 # The list is DISCOVERED at startup from the system's `.desktop` files (see
 # `discover` below). This hardcoded set is only the fallback when none are found.
 # `cmd` is the raw program to run (no trailing `&`); `terminal` marks a CLI/TUI
 # app (`Terminal=true` in its desktop entry) that must run inside a terminal.
-$ App : @struct = label: Str, cmd: Str, terminal: @bool,
+$ App : @struct = label: @str, cmd: @str, terminal: @bool,
 
-$ fallback_apps : @list App =
+$ fallback_apps : @vec App =
 	[ App.{ .label = "Terminal", .cmd = "xterm",      .terminal = @false }
 	, App.{ .label = "Files",    .cmd = "xdg-open .", .terminal = @false }
 	, App.{ .label = "Browser",  .cmd = "firefox",    .terminal = @false } ]
@@ -78,33 +78,33 @@ $ rows_fit   : @int32 = (max_list_h - top) / row_stride
 $ list_height : @int32 -> @int32 = \rows = top + rows * row_stride + pad
 
 # Is (mx, my) inside the axis-aligned box at (x, y) of size (w, h)?
-$ in_box : @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> Int =
+$ in_box : @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> @int =
 	\mx my x y w h =
 		if mx >= x && mx ?< x + w && my >= y && my ?< y + h => 1 else 0
 
 # -- search state ------------------------------------------------------------
 # Drain raylib's character queue onto the query. `getCharPressed` yields a C
-# `int` codepoint (0 when the queue is empty); `from_byte` wants an `Int`, so
+# `int` codepoint (0 when the queue is empty); `from_byte` wants an `@int`, so
 # each printable ASCII code crosses the width boundary with `@cast`.
-$ read_chars : Str -> Str = \q =
+$ read_chars : @str -> @str = \q =
 	let c = getCharPressed {} in
 	if c ?= 0 => q
 	else if c >= 32 && c ?< 127 => read_chars (q ++ from_byte (@cast c))
 	else read_chars q
 
-$ drop_last : Str -> Str = \s =
+$ drop_last : @str -> @str = \s =
 	if len s ?> 0 => substr s 0 (len s - 1) else s
 
 # Fold this frame's keyboard into the query: typed chars, backspace, escape-clear.
-$ edit_query : Str -> Str = \q =
+$ edit_query : @str -> @str = \q =
 	let q1 = read_chars q,
 	    q2 = if isKeyPressed key_backspace ?= 1 => drop_last q1 else q1 in
 	if isKeyPressed key_escape ?= 1 => "" else q2
 
 # Case-insensitive substring match; an empty query keeps every app.
-$ keep : App -> Str -> @bool = \a q = contains (to_lower a.label) (to_lower q)
+$ keep : App -> @str -> @bool = \a q = contains (to_lower a.label) (to_lower q)
 
-$ filter_apps : @list App -> Str -> @list App = \apps q =
+$ filter_apps : @vec App -> @str -> @vec App = \apps q =
 	is apps
 		| [] => []
 		| a :: rest =>
@@ -112,45 +112,45 @@ $ filter_apps : @list App -> Str -> @list App = \apps q =
 			if keep a q => a :: kept else kept
 
 # How many apps in the list, and dropping the first `n` (for the scroll offset).
-$ app_count : @list App -> @int32 -> @int32 = \apps acc =
+$ app_count : @vec App -> @int32 -> @int32 = \apps acc =
 	is apps | [] => acc | _ :: rest => app_count rest (acc + 1)
 
-$ drop_apps : @list App -> @int32 -> @list App = \apps n =
+$ drop_apps : @vec App -> @int32 -> @vec App = \apps n =
 	if n <= 0 => apps
 	else is apps | [] => [] | _ :: rest => drop_apps rest (n - 1)
 
 # -- command modes----------------------------------------------------
 # The query's first byte selects a mode: `!` runs a shell command, `?` searches
 # the web, `$` runs a curated tool; anything else just filters the app list.
-$ mode_run    : Int = 33   # '!'
-$ mode_search : Int = 63   # '?'
-$ mode_tool   : Int = 36   # '$'
+$ mode_run    : @int = 33   # '!'
+$ mode_search : @int = 63   # '?'
+$ mode_tool   : @int = 36   # '$'
 
-$ mode_of : Str -> Int = \q = if len q ?> 0 => at q 0 else 0
+$ mode_of : @str -> @int = \q = if len q ?> 0 => at q 0 else 0
 
 # Everything after the sigil, whitespace-trimmed.
-$ payload : Str -> Str = \q = if len q ?> 0 => trim (substr q 1 (len q)) else q
+$ payload : @str -> @str = \q = if len q ?> 0 => trim (substr q 1 (len q)) else q
 
 # Spawn a shell command in a fresh terminal window that stays open afterward.
-$ in_terminal : Str -> Int = \cmd =
+$ in_terminal : @str -> @int = \cmd =
 	system (terminal ++ " -e sh -c '" ++ cmd ++ "; exec $SHELL' &")
 
 # Launch an app: a `Terminal=true` (CLI/TUI) app runs inside a terminal window,
 # everything else is spawned fire-and-forget as a background GUI process.
-$ launch : App -> Int = \a =
+$ launch : App -> @int = \a =
 	if a.terminal => in_terminal a.cmd
 	else system (a.cmd ++ " &")
 
-# Run a shell command and capture its stdout+stderr as a Str, to show in the
-# window instead of a terminal. `popen` hands back a FILE* as a word-sized Int,
+# Run a shell command and capture its stdout+stderr as a @str, to show in the
+# window instead of a terminal. `popen` hands back a FILE* as a word-sized @int,
 # exactly like `C.fopen`, so it reads byte by byte to EOF with `C.fgetc`. The
 # read is bounded so a chatty command cannot stall the frame loop.
-$ popen  : {cmd: Str, mode: Str} -> Int = @extern "C" "popen"  "libc"
-$ pclose : Int -> Int                   = @extern "C" "pclose" "libc"
+$ popen  : {cmd: @str, mode: @str} -> @int = @extern "C" "popen"  "libc"
+$ pclose : @int -> @int                   = @extern "C" "pclose" "libc"
 
-$ is_byte : Int -> @bool = \c = if c ?< 0 => @false else c <= 255
+$ is_byte : @int -> @bool = \c = if c ?< 0 => @false else c <= 255
 
-$ drain : Int -> Int -> Str -> Str = \f budget acc =
+$ drain : @int -> @int -> @str -> @str = \f budget acc =
 	if budget <= 0 => acc
 	else
 		let c = C.fgetc f in
@@ -160,17 +160,17 @@ $ drain : Int -> Int -> Str -> Str = \f budget acc =
 # Single-quote a string for the shell, so the whole command reaches one `sh -c`
 # as a single argument (spaces, pipes and `;` included). A literal `'` becomes
 # `'\''`: close the quote, an escaped quote, reopen.
-$ shell_quote : Str -> Str = \s = "'" ++ replace s "'" "'\\''" ++ "'"
+$ shell_quote : @str -> @str = \s = "'" ++ replace s "'" "'\\''" ++ "'"
 
 # `pclose` hands back a wait(2) status; `timeout` exits 124 when it had to kill
 # the command, which sits in the high byte (WEXITSTATUS).
-$ timed_out : Int -> @bool = \status = (status / 256) % 256 ?= 124
+$ timed_out : @int -> @bool = \status = (status / 256) % 256 ?= 124
 
 # Run a shell command under `timeout` and capture its stdout+stderr. If it runs
 # longer than `cmd_timeout` seconds it is killed and the window shows a timeout
 # message instead of partial output. The command runs inside its own `sh -c` so
 # `timeout` covers the whole pipeline, not just the first word.
-$ run_capture : Str -> Str = \cmd =
+$ run_capture : @str -> @str = \cmd =
 	let wrapped = "timeout -k 1 " ++ cmd_timeout ++ " sh -c " ++ shell_quote cmd ++ " 2>&1" in
 	let f = popen {wrapped, "r"} in
 	if f ?= 0 => ""
@@ -181,7 +181,7 @@ $ run_capture : Str -> Str = \cmd =
 
 # Like `run_capture` but with a large budget: the app list can be hundreds of
 # lines. `drain` recurses in tail position, so a big budget is safe.
-$ capture_all : Str -> Str = \cmd =
+$ capture_all : @str -> @str = \cmd =
 	let f = popen {cmd, "r"} in
 	if f ?= 0 => ""
 	else
@@ -196,12 +196,12 @@ $ capture_all : Str -> Str = \cmd =
 # an INPUT pointer (the FFI copies byte-buffer arguments, which is fine for an
 # input). `ctime` returns the fixed "Www Mmm dd hh:mm:ss yyyy\n"; we keep the
 # "Www Mmm dd" date and the "hh:mm" time, dropping seconds and year.
-$ ctime : Str -> Str = @extern "C" "ctime" "libc"
+$ ctime : @str -> @str = @extern "C" "ctime" "libc"
 
-$ le8 : Int -> Int -> Str = \t k =
+$ le8 : @int -> @int -> @str = \t k =
 	if k >= 8 => "" else (@array_push "" (t % 256)) ++ le8 (t / 256) (k + 1)
 
-$ clock_str : {} -> Str = \u =
+$ clock_str : {} -> @str = \u =
 	let s = ctime (le8 (C.time 0) 0) in
 	substr s 0 10 ++ "   " ++ substr s 11 16
 
@@ -214,7 +214,7 @@ $ clock_str : {} -> Str = \u =
 # group, strips `Exec` field codes (`%f`, ...), and drops hidden/non-app entries.
 # (In the awk source, `{` is escaped `\{` and `[` `\\[` so the Thrax string lexer
 # leaves them alone.)
-$ list_apps_cmd : Str =
+$ list_apps_cmd : @str =
 	"dirs=\"$XDG_DATA_HOME\"; [ -n \"$dirs\" ] || dirs=\"$HOME/.local/share\"; "
 	++ "more=\"$XDG_DATA_DIRS\"; [ -n \"$more\" ] || more=\"/usr/local/share:/usr/share\"; "
 	++ "all=\"$dirs:$more\"; "
@@ -237,7 +237,7 @@ $ list_apps_cmd : Str =
 # Split the captured `Name<TAB>Exec<TAB>Terminal` lines into apps (a small list,
 # so doing this in Thrax is cheap). The command is stored raw; `launch` decides
 # how to spawn it.
-$ apps_from_lines : @list Str -> @list App = \ls =
+$ apps_from_lines : @vec @str -> @vec App = \ls =
 	is ls
 		| [] => []
 		| line :: rest =>
@@ -248,7 +248,7 @@ $ apps_from_lines : @list Str -> @list App = \ls =
 
 # Discover installed apps at startup; fall back to the hardcoded list if the
 # scan turns up nothing (e.g. a system with no `.desktop` files).
-$ discover : {} -> @list App = \u =
+$ discover : {} -> @vec App = \u =
 	is apps_from_lines (lines (capture_all list_apps_cmd))
 		| [] => fallback_apps
 		| found => found
@@ -259,18 +259,18 @@ $ max_i32 : @int32 -> @int32 -> @int32 = \a b = if a >= b => a else b
 $ min_i32 : @int32 -> @int32 -> @int32 = \a b = if a ?< b => a else b
 
 # How many bytes equal `target` in `s` (the '\n' count gives the line count).
-$ count_byte : Str -> Int -> Int -> Int = \s target i =
+$ count_byte : @str -> @int -> @int -> @int = \s target i =
 	if i >= len s => 0
 	else (if at s i ?= target => 1 else 0) + count_byte s target (i + 1)
 
 # Width in pixels of one line of `s` drawn in `font` at `out_fs`.
-$ line_w : Font -> Str -> @int32 = \font s =
+$ line_w : Font -> @str -> @int32 = \font s =
 	let m = measureTextEx { .p0 = font, .p1 = s, .p2 = out_fs, .p3 = spacing } in
 	f2i32 m.x
 
 # Width in pixels of the widest line of `s`. Walks line by line (`start` is the
 # current line's first byte), measuring each with the loaded font.
-$ widest : Font -> Str -> Int -> Int -> @int32 -> @int32 = \font s start i acc =
+$ widest : Font -> @str -> @int -> @int -> @int32 -> @int32 = \font s start i acc =
 	if i >= len s => max_i32 acc (line_w font (substr s start (len s)))
 	else if at s i ?= 10 =>
 		widest font s (i + 1) (i + 1) (max_i32 acc (line_w font (substr s start i)))
@@ -280,7 +280,7 @@ $ widest : Font -> Str -> Int -> Int -> @int32 -> @int32 = \font s start i acc =
 # it grows with the number of visible rows (`rows`, already capped to `rows_fit`)
 # and never shrinks below `base_h`. With output it grows wide enough for the
 # longest line and tall enough for every line, both capped against the screen.
-$ fit_window : Font -> Str -> @int32 -> {} = \font output rows =
+$ fit_window : Font -> @str -> @int32 -> {} = \font output rows =
 	if is_empty output => setWindowSize { .p0 = base_w, .p1 = max_i32 base_h (list_height rows) }
 	else
 		let lines : @int32 = @cast (1 + count_byte output 10 0),
@@ -289,18 +289,18 @@ $ fit_window : Font -> Str -> @int32 -> {} = \font output rows =
 		setWindowSize { .p0 = w, .p1 = h }
 
 # Draw `s` at (x, y) in `font`; positions and the size cross to @float32 here.
-$ text : Font -> Str -> @int32 -> @int32 -> @float32 -> Color -> {} =
+$ text : Font -> @str -> @int32 -> @int32 -> @float32 -> Color -> {} =
 	\font s x y size col =
 		drawTextEx { .p0 = font, .p1 = s,
 		             .p2 = Vector2.{ .x = i2f32 x, .y = i2f32 y },
 		             .p3 = size, .p4 = spacing, .p5 = col }
 
 # Hand the query to the web browser as a search, spaces percent-escaped as `+`.
-$ open_search : Str -> Int = \q =
+$ open_search : @str -> @int = \q =
 	system ("xdg-open '" ++ search_url ++ replace q " " "+" ++ "' &")
 
 # Curated `$name` tools. An empty result means "no such tool".
-$ tool_cmd : Str -> Str = \name =
+$ tool_cmd : @str -> @str = \name =
 	if eq name "time" => "date"
 	else if eq name "cal"  => "cal"
 	else if eq name "disk" => "df -h"
@@ -310,7 +310,7 @@ $ tool_cmd : Str -> Str = \name =
 # -- rendering ---------------------------------------------------------------
 # A hovered row is a filled rounded ("oval") box; an idle row is just its label
 # fenced by two thin divider lines (top and bottom edges).
-$ draw_row : @int32 -> Int -> {} = \y hover =
+$ draw_row : @int32 -> @int -> {} = \y hover =
 	if hover ?= 1
 		=> drawRectangleRounded
 			{ .p0 = Rectangle.{ .x = i2f32 pad, .y = i2f32 y,
@@ -322,7 +322,7 @@ $ draw_row : @int32 -> Int -> {} = \y hover =
 
 # Draw at most `budget` rows starting at display row `i` (the list is already
 # offset by the scroll position, so `i` runs from 0 at the top of the window).
-$ draw_apps : Font -> @list App -> @int32 -> @int32 -> @int32 -> @int32 -> {} =
+$ draw_apps : Font -> @vec App -> @int32 -> @int32 -> @int32 -> @int32 -> {} =
 	\font apps i budget mx my =
 		if budget <= 0 => {}
 		else is apps
@@ -336,12 +336,12 @@ $ draw_apps : Font -> @list App -> @int32 -> @int32 -> @int32 -> @int32 -> {} =
 
 # What the search box shows: the query with a trailing caret (just the caret when
 # empty, so there is no mode-hint text cluttering the box).
-$ search_text : Str -> Str = \q = q ++ "_"
+$ search_text : @str -> @str = \q = q ++ "_"
 
 # `shown` is the already-scrolled slice of the app list; `rows` is how many of it
 # are visible (drives both the window height and how many rows get drawn). The
 # day-and-time header is recomputed here every frame (cheap: no fork).
-$ render : Font -> Str -> Str -> @list App -> @int32 -> @int32 -> @int32 -> {} =
+$ render : Font -> @str -> @str -> @vec App -> @int32 -> @int32 -> @int32 -> {} =
 	\font query output shown rows mx my =
 		fit_window font output rows ;
 		beginDrawing {} ;
@@ -357,7 +357,7 @@ $ render : Font -> Str -> Str -> @list App -> @int32 -> @int32 -> @int32 -> {} =
 # On a click, find the button under the cursor and spawn its program. Returns 1
 # when a button was hit (so the loop can close the launcher), 0 otherwise. Only
 # the `budget` visible rows are hit-tested, matching what `draw_apps` drew.
-$ click : @list App -> @int32 -> @int32 -> @int32 -> @int32 -> Int =
+$ click : @vec App -> @int32 -> @int32 -> @int32 -> @int32 -> @int =
 	\apps i budget mx my =
 		if budget <= 0 => 0
 		else is apps
@@ -376,12 +376,12 @@ $ click : @list App -> @int32 -> @int32 -> @int32 -> @int32 -> Int =
 # preserved across modes that produce none.
 # `done` asks the loop to close the window: set when the launcher has handed off
 # and has nothing more to show (a web search, or launching an app).
-$ Next : @struct = q: Str, out: Str, done: @bool,
+$ Next : @struct = q: @str, out: @str, done: @bool,
 
 # Dispatch by mode with explicit `?=` on the sigil byte. A `when`/`is` arm named
 # by a lowercase binding would BIND (match anything) rather than compare, so the
 # first arm would always win; comparing the values is what makes each mode fire.
-$ commit : Str -> Str -> @list App -> Next = \q out visible =
+$ commit : @str -> @str -> @vec App -> Next = \q out visible =
 	let m = mode_of q in
 	if m ?= mode_run => Next.{ .q = "", .out = run_capture (payload q), .done = @false }
 	else if m ?= mode_search =>
@@ -420,7 +420,7 @@ $ clamp_off : @int32 -> @int32 -> @int32 = \off n =
 # that, clearing the query shows every app. Each frame folds in the keyboard,
 # filters, and scrolls; clicks and the drawn rows use the SAME slice so they line
 # up. Launching an app (click or plain Enter) or a web search closes the launcher.
-$ loop : Font -> @list App -> Str -> Str -> @int32 -> @bool -> {} =
+$ loop : Font -> @vec App -> @str -> @str -> @int32 -> @bool -> {} =
 	\font all query output off loaded =
 	if windowShouldClose {} ?= 0 =>
 		let q = edit_query query,
@@ -449,7 +449,7 @@ $ loop : Font -> @list App -> Str -> Str -> @int32 -> @bool -> {} =
 		else loop font all2 q out off2 loaded2
 	else closeWindow {}
 
-$ main : {} -> <| e> Int = \u =
+$ main : {} -> <| e> @int = \u =
 	setConfigFlags (@cast flag_window_undecorated);
 	initWindow { .p0 = base_w, .p1 = base_h, .p2 = "" };
 	setTargetFPS 60;

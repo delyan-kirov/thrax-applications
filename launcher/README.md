@@ -34,7 +34,7 @@ list by a case-insensitive substring match. `getCharPressed` returns a C `int`
 types. The `@cast` intrinsic bridges them:
 
 ```
-$ read_chars : Str -> Str = \q =
+$ read_chars : @str -> @str = \q =
 	let c = getCharPressed {} in            # c : @int32
 	if c ?= 0 => q
 	else if c >= 32 && c ?< 127 => read_chars (q ++ from_byte (@cast c))
@@ -43,7 +43,7 @@ $ read_chars : Str -> Str = \q =
 
 `@cast` reinterprets an integer at another width. It is type-directed: the target
 comes from the checking context (an argument position or an annotated binding),
-so `from_byte (@cast c)` casts to `Int` because `from_byte : Int -> Str`. Both
+so `from_byte (@cast c)` casts to `Int` because `from_byte : Int -> @str`. Both
 engines box integers uniformly, so it is a no-op at runtime; the actual C width is
 applied only at the `@extern` boundary.
 
@@ -66,8 +66,8 @@ so the terminal and search engine are two editable constants at the top of the
 file:
 
 ```
-$ terminal   : Str = "xterm"
-$ search_url : Str = "https://duckduckgo.com/?q="
+$ terminal   : @str = "xterm"
+$ search_url : @str = "https://duckduckgo.com/?q="
 ```
 
 `!` and `$` open `terminal -e sh -c '<cmd>; exec $SHELL'`, so the window stays
@@ -115,7 +115,7 @@ thrax build MAIN.thx   # emits MAIN.c, compiles and links -> ./MAIN
 The launchable programs are a plain list of records near the top of `MAIN.thx`:
 
 ```
-$ App : @struct = label: Str, cmd: Str,
+$ App : @struct = label: @str, cmd: @str,
 $ apps : @list App =
     [ App.{ .label = "Terminal", .cmd = "xterm &" }
     , App.{ .label = "Files",    .cmd = "xdg-open . &" }
