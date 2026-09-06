@@ -6,4 +6,4 @@
 # wasm import; the embedder decides what it does (see web/site/host.mjs). Here
 # `print` writes a line to the notebook's output pane.
 
-$ print : Str -> {} = @extern "WASM" "print" ""
+$ print : @str -> {} = @extern "WASM" "print" ""

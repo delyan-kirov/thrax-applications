@@ -29,7 +29,7 @@ becomes `red`); the C symbol in the `@extern` string keeps its original case, an
 type names (structs, unions, aliases, the enum type) stay capitalized.
 
 Type mapping: `int`/`unsigned`/`short`/`long` and `char`/`float`/`double`/`bool`
-map to the matching sized Thrax numerics; `void` is `{}`; a single `char*` is `Str`
+map to the matching sized Thrax numerics; `void` is `{}`; a single `char*` is `@str`
 in a signature; any other pointer (including `char**`) is `Ptr`; in a struct field
 every pointer is `Ptr`. A struct or union with an **array or bit-field member** is
 skipped with a `# skipped ...` note, and any function passing/returning such a type
@@ -54,7 +54,7 @@ LIB=libfoo.so  MOD=Foo  OUT=foo.thx  thrax run MAIN.thx header.h [more.h ...]
 - `MOD` the generated module name (default `BINDINGS`).
 - `OUT` the output file; if unset, the bindings are written to stdout.
 
-`main : [n]Str -> <| e> Int` is a C-style entry: it returns an exit code (`0`)
+`main : [n]@str -> <| e> Int` is a C-style entry: it returns an exit code (`0`)
 rather than printing a value, and the open effect row lets it do the file IO.
 
 Example against the bundled `test.h`:

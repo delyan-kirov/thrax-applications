@@ -18,7 +18,6 @@ fn stdlib_source(name: &str) -> Option<&'static str> {
     Some(match name {
         "C" => include_str!("../../../../library/C.thx"),
         "CORE" => include_str!("../../../../library/CORE.thx"),
-        "LIST" => include_str!("../../../../library/LIST.thx"),
         "MAP" => include_str!("../../../../library/MAP.thx"),
         "SET" => include_str!("../../../../library/SET.thx"),
         "VEC" => include_str!("../../../../library/VEC.thx"),
