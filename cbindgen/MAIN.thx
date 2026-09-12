@@ -105,7 +105,7 @@ $ str_to_int : @str -> @int = \s =
 	else sti_loop s 0 n 0
 
 # -- read the whole input ----------------------------------------------------
-$ read_all : @int -> @str -> @str = \f acc =
+$ read_all : @int -> @str -> <@io> @str = \f acc =
 	let c = C.fgetc f in
 	if c ?< 0 => acc else read_all f (@array_push acc c)
 
@@ -413,7 +413,7 @@ $ gen : @vec (@vec @str) -> @str -> @vec @str -> @str -> @str = \decls lib known
 	is decls | [] => out | d :: r => gen r lib known (out ++ emit_decl d lib known)
 
 # -- driver ------------------------------------------------------------------
-$ getenv_or : @str -> @str -> @str = \name dflt =
+$ getenv_or : @str -> @str -> <@io> @str = \name dflt =
 	let v = C.getenv name in
 	if @array_len v ?= 0 => dflt else v
 
@@ -427,7 +427,7 @@ $ headers : [n]@str -> @vec @str = \args =
 
 # Read one header and generate its bindings; a missing file becomes a note so a
 # run over several headers is not aborted by one bad path.
-$ gen_file : @str -> @str -> @str = \path lib =
+$ gen_file : @str -> @str -> <@io> @str = \path lib =
 	let f = C.fopen {path, "r"} in
 	if f ?= 0 => "# cbindgen: cannot open " ++ path ++ "\n"
 	else
@@ -436,7 +436,7 @@ $ gen_file : @str -> @str -> @str = \path lib =
 		    decls = declarations (strip_noise (drop_linkage (drop_strings (tokenize (clean text))))),
 		    known = collect_types decls [] in
 		gen decls lib known ""
-$ gen_all : @vec @str -> @str -> @str -> @str = \paths lib out =
+$ gen_all : @vec @str -> @str -> @str -> <@io> @str = \paths lib out =
 	is paths | [] => out | p :: r => gen_all r lib (out ++ gen_file p lib)
 
 $ main : [n]@str -> <| e> @int = \args =

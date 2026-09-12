@@ -19,7 +19,7 @@ $ with STR
 
 # Spawn a program (fire-and-forget) via libc. The `&` in the command returns at
 # once. Not part of raylib, so it stays a local `@extern`.
-$ system : @str -> @int = @extern "C" "system" "libc"
+$ system : @str -> <@io> @int = @extern "C" "system" "libc"
 
 # -- palette (ordinary struct literals, passed to raylib by value) -----------
 $ bg        : Color = Color.{ .r = 4,   .g = 10,  .b = 22,  .a = 255 }
@@ -132,12 +132,12 @@ $ mode_of : @str -> @int = \q = if len q ?> 0 => at q 0 else 0
 $ payload : @str -> @str = \q = if len q ?> 0 => trim (substr q 1 (len q)) else q
 
 # Spawn a shell command in a fresh terminal window that stays open afterward.
-$ in_terminal : @str -> @int = \cmd =
+$ in_terminal : @str -> <@io> @int = \cmd =
 	system (terminal ++ " -e sh -c '" ++ cmd ++ "; exec $SHELL' &")
 
 # Launch an app: a `Terminal=true` (CLI/TUI) app runs inside a terminal window,
 # everything else is spawned fire-and-forget as a background GUI process.
-$ launch : App -> @int = \a =
+$ launch : App -> <@io> @int = \a =
 	if a.terminal => in_terminal a.cmd
 	else system (a.cmd ++ " &")
 
@@ -145,12 +145,12 @@ $ launch : App -> @int = \a =
 # window instead of a terminal. `popen` hands back a FILE* as a word-sized @int,
 # exactly like `C.fopen`, so it reads byte by byte to EOF with `C.fgetc`. The
 # read is bounded so a chatty command cannot stall the frame loop.
-$ popen  : {cmd: @str, mode: @str} -> @int = @extern "C" "popen"  "libc"
-$ pclose : @int -> @int                   = @extern "C" "pclose" "libc"
+$ popen  : {cmd: @str, mode: @str} -> <@io> @int = @extern "C" "popen"  "libc"
+$ pclose : @int -> <@io> @int                   = @extern "C" "pclose" "libc"
 
 $ is_byte : @int -> @bool = \c = if c ?< 0 => @false else c <= 255
 
-$ drain : @int -> @int -> @str -> @str = \f budget acc =
+$ drain : @int -> @int -> @str -> <@io> @str = \f budget acc =
 	if budget <= 0 => acc
 	else
 		let c = C.fgetc f in
@@ -170,7 +170,7 @@ $ timed_out : @int -> @bool = \status = (status / 256) % 256 ?= 124
 # longer than `cmd_timeout` seconds it is killed and the window shows a timeout
 # message instead of partial output. The command runs inside its own `sh -c` so
 # `timeout` covers the whole pipeline, not just the first word.
-$ run_capture : @str -> @str = \cmd =
+$ run_capture : @str -> <@io> @str = \cmd =
 	let wrapped = "timeout -k 1 " ++ cmd_timeout ++ " sh -c " ++ shell_quote cmd ++ " 2>&1" in
 	let f = popen {wrapped, "r"} in
 	if f ?= 0 => ""
@@ -181,7 +181,7 @@ $ run_capture : @str -> @str = \cmd =
 
 # Like `run_capture` but with a large budget: the app list can be hundreds of
 # lines. `drain` recurses in tail position, so a big budget is safe.
-$ capture_all : @str -> @str = \cmd =
+$ capture_all : @str -> <@io> @str = \cmd =
 	let f = popen {cmd, "r"} in
 	if f ?= 0 => ""
 	else
@@ -201,7 +201,7 @@ $ ctime : @str -> @str = @extern "C" "ctime" "libc"
 $ le8 : @int -> @int -> @str = \t k =
 	if k >= 8 => "" else (@array_push "" (t % 256)) ++ le8 (t / 256) (k + 1)
 
-$ clock_str : {} -> @str = \u =
+$ clock_str : {} -> <@io> @str = \u =
 	let s = ctime (le8 (C.time 0) 0) in
 	substr s 0 10 ++ "   " ++ substr s 11 16
 
@@ -248,7 +248,7 @@ $ apps_from_lines : @vec @str -> @vec App = \ls =
 
 # Discover installed apps at startup; fall back to the hardcoded list if the
 # scan turns up nothing (e.g. a system with no `.desktop` files).
-$ discover : {} -> @vec App = \u =
+$ discover : {} -> <@io> @vec App = \u =
 	is apps_from_lines (lines (capture_all list_apps_cmd))
 		| [] => fallback_apps
 		| found => found
@@ -296,7 +296,7 @@ $ text : Font -> @str -> @int32 -> @int32 -> @float32 -> Color -> {} =
 		             .p3 = size, .p4 = spacing, .p5 = col }
 
 # Hand the query to the web browser as a search, spaces percent-escaped as `+`.
-$ open_search : @str -> @int = \q =
+$ open_search : @str -> <@io> @int = \q =
 	system ("xdg-open '" ++ search_url ++ replace q " " "+" ++ "' &")
 
 # Curated `$name` tools. An empty result means "no such tool".
@@ -341,7 +341,7 @@ $ search_text : @str -> @str = \q = q ++ "_"
 # `shown` is the already-scrolled slice of the app list; `rows` is how many of it
 # are visible (drives both the window height and how many rows get drawn). The
 # day-and-time header is recomputed here every frame (cheap: no fork).
-$ render : Font -> @str -> @str -> @vec App -> @int32 -> @int32 -> @int32 -> {} =
+$ render : Font -> @str -> @str -> @vec App -> @int32 -> @int32 -> @int32 -> <@io> {} =
 	\font query output shown rows mx my =
 		fit_window font output rows ;
 		beginDrawing {} ;
@@ -357,7 +357,7 @@ $ render : Font -> @str -> @str -> @vec App -> @int32 -> @int32 -> @int32 -> {} 
 # On a click, find the button under the cursor and spawn its program. Returns 1
 # when a button was hit (so the loop can close the launcher), 0 otherwise. Only
 # the `budget` visible rows are hit-tested, matching what `draw_apps` drew.
-$ click : @vec App -> @int32 -> @int32 -> @int32 -> @int32 -> @int =
+$ click : @vec App -> @int32 -> @int32 -> @int32 -> @int32 -> <@io> @int =
 	\apps i budget mx my =
 		if budget <= 0 => 0
 		else is apps
@@ -381,7 +381,7 @@ $ Next : @struct = q: @str, out: @str, done: @bool,
 # Dispatch by mode with explicit `?=` on the sigil byte. A `when`/`is` arm named
 # by a lowercase binding would BIND (match anything) rather than compare, so the
 # first arm would always win; comparing the values is what makes each mode fire.
-$ commit : @str -> @str -> @vec App -> Next = \q out visible =
+$ commit : @str -> @str -> @vec App -> <@io> Next = \q out visible =
 	let m = mode_of q in
 	if m ?= mode_run => Next.{ .q = "", .out = run_capture (payload q), .done = @false }
 	else if m ?= mode_search =>
@@ -420,7 +420,7 @@ $ clamp_off : @int32 -> @int32 -> @int32 = \off n =
 # that, clearing the query shows every app. Each frame folds in the keyboard,
 # filters, and scrolls; clicks and the drawn rows use the SAME slice so they line
 # up. Launching an app (click or plain Enter) or a web search closes the launcher.
-$ loop : Font -> @vec App -> @str -> @str -> @int32 -> @bool -> {} =
+$ loop : Font -> @vec App -> @str -> @str -> @int32 -> @bool -> <@io> {} =
 	\font all query output off loaded =
 	if windowShouldClose {} ?= 0 =>
 		let q = edit_query query,
