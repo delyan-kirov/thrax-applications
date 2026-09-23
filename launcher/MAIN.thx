@@ -80,7 +80,7 @@ $ list_height : @int32 -> @int32 = \rows = top + rows * row_stride + pad
 # Is (mx, my) inside the axis-aligned box at (x, y) of size (w, h)?
 $ in_box : @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> @int =
 	\mx my x y w h =
-		if mx >= x && mx ?< x + w && my >= y && my ?< y + h => 1 else 0
+		if mx >= x && mx < x + w && my >= y && my < y + h => 1 else 0
 
 # -- search state ------------------------------------------------------------
 # Drain raylib's character queue onto the query. `getCharPressed` yields a C
@@ -88,18 +88,18 @@ $ in_box : @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> @int =
 # each printable ASCII code crosses the width boundary with `@cast`.
 $ read_chars : @str -> @str = \q =
 	let c = getCharPressed {} in
-	if c ?= 0 => q
-	else if c >= 32 && c ?< 127 => read_chars (q ++ from_byte (@cast c))
+	if c == 0 => q
+	else if c >= 32 && c < 127 => read_chars (q ++ from_byte (@cast c))
 	else read_chars q
 
 $ drop_last : @str -> @str = \s =
-	if len s ?> 0 => substr s 0 (len s - 1) else s
+	if len s > 0 => substr s 0 (len s - 1) else s
 
 # Fold this frame's keyboard into the query: typed chars, backspace, escape-clear.
 $ edit_query : @str -> @str = \q =
 	let q1 = read_chars q,
-	    q2 = if isKeyPressed key_backspace ?= 1 => drop_last q1 else q1 in
-	if isKeyPressed key_escape ?= 1 => "" else q2
+	    q2 = if isKeyPressed key_backspace == 1 => drop_last q1 else q1 in
+	if isKeyPressed key_escape == 1 => "" else q2
 
 # Case-insensitive substring match; an empty query keeps every app.
 $ keep : App -> @str -> @bool = \a q = contains (to_lower a.label) (to_lower q)
@@ -126,10 +126,10 @@ $ mode_run    : @int = 33   # '!'
 $ mode_search : @int = 63   # '?'
 $ mode_tool   : @int = 36   # '$'
 
-$ mode_of : @str -> @int = \q = if len q ?> 0 => at q 0 else 0
+$ mode_of : @str -> @int = \q = if len q > 0 => at q 0 else 0
 
 # Everything after the sigil, whitespace-trimmed.
-$ payload : @str -> @str = \q = if len q ?> 0 => trim (substr q 1 (len q)) else q
+$ payload : @str -> @str = \q = if len q > 0 => trim (substr q 1 (len q)) else q
 
 # Spawn a shell command in a fresh terminal window that stays open afterward.
 $ in_terminal : @str -> <@io> @int = \cmd =
@@ -148,7 +148,7 @@ $ launch : App -> <@io> @int = \a =
 $ popen  : {cmd: @str, mode: @str} -> <@io> @int = @extern "C" "popen"  "libc"
 $ pclose : @int -> <@io> @int                   = @extern "C" "pclose" "libc"
 
-$ is_byte : @int -> @bool = \c = if c ?< 0 => @false else c <= 255
+$ is_byte : @int -> @bool = \c = if c < 0 => @false else c <= 255
 
 $ drain : @int -> @int -> @str -> <@io> @str = \f budget acc =
 	if budget <= 0 => acc
@@ -164,7 +164,7 @@ $ shell_quote : @str -> @str = \s = "'" ++ replace s "'" "'\\''" ++ "'"
 
 # `pclose` hands back a wait(2) status; `timeout` exits 124 when it had to kill
 # the command, which sits in the high byte (WEXITSTATUS).
-$ timed_out : @int -> @bool = \status = (status / 256) % 256 ?= 124
+$ timed_out : @int -> @bool = \status = (status / 256) % 256 == 124
 
 # Run a shell command under `timeout` and capture its stdout+stderr. If it runs
 # longer than `cmd_timeout` seconds it is killed and the window shows a timeout
@@ -173,7 +173,7 @@ $ timed_out : @int -> @bool = \status = (status / 256) % 256 ?= 124
 $ run_capture : @str -> <@io> @str = \cmd =
 	let wrapped = "timeout -k 1 " ++ cmd_timeout ++ " sh -c " ++ shell_quote cmd ++ " 2>&1" in
 	let f = popen {wrapped, "r"} in
-	if f ?= 0 => ""
+	if f == 0 => ""
 	else
 		let body = drain f 2000 "" in
 		let status = pclose f in
@@ -183,7 +183,7 @@ $ run_capture : @str -> <@io> @str = \cmd =
 # lines. `drain` recurses in tail position, so a big budget is safe.
 $ capture_all : @str -> <@io> @str = \cmd =
 	let f = popen {cmd, "r"} in
-	if f ?= 0 => ""
+	if f == 0 => ""
 	else
 		let body = drain f 200000 "" in
 		pclose f;
@@ -243,7 +243,7 @@ $ apps_from_lines : @vec @str -> @vec App = \ls =
 		| line :: rest =>
 			is split line "\t"
 				| name :: cmd :: term :: _ =>
-					App.{ .label = name, .cmd = cmd, .terminal = term ?= "1" } :: apps_from_lines rest
+					App.{ .label = name, .cmd = cmd, .terminal = term == "1" } :: apps_from_lines rest
 				| _ => apps_from_lines rest
 
 # Discover installed apps at startup; fall back to the hardcoded list if the
@@ -256,12 +256,12 @@ $ discover : {} -> <@io> @vec App = \u =
 # -- window sizing -----------------------------------------------------------
 # The window grows to fit the captured output and shrinks back to the app list.
 $ max_i32 : @int32 -> @int32 -> @int32 = \a b = if a >= b => a else b
-$ min_i32 : @int32 -> @int32 -> @int32 = \a b = if a ?< b => a else b
+$ min_i32 : @int32 -> @int32 -> @int32 = \a b = if a < b => a else b
 
 # How many bytes equal `target` in `s` (the '\n' count gives the line count).
 $ count_byte : @str -> @int -> @int -> @int = \s target i =
 	if i >= len s => 0
-	else (if at s i ?= target => 1 else 0) + count_byte s target (i + 1)
+	else (if at s i == target => 1 else 0) + count_byte s target (i + 1)
 
 # Width in pixels of one line of `s` drawn in `font` at `out_fs`.
 $ line_w : Font -> @str -> @int32 = \font s =
@@ -272,7 +272,7 @@ $ line_w : Font -> @str -> @int32 = \font s =
 # current line's first byte), measuring each with the loaded font.
 $ widest : Font -> @str -> @int -> @int -> @int32 -> @int32 = \font s start i acc =
 	if i >= len s => max_i32 acc (line_w font (substr s start (len s)))
-	else if at s i ?= 10 =>
+	else if at s i == 10 =>
 		widest font s (i + 1) (i + 1) (max_i32 acc (line_w font (substr s start i)))
 	else widest font s start (i + 1) acc
 
@@ -311,7 +311,7 @@ $ tool_cmd : @str -> @str = \name =
 # A hovered row is a filled rounded ("oval") box; an idle row is just its label
 # fenced by two thin divider lines (top and bottom edges).
 $ draw_row : @int32 -> @int -> {} = \y hover =
-	if hover ?= 1
+	if hover == 1
 		=> drawRectangleRounded
 			{ .p0 = Rectangle.{ .x = i2f32 pad, .y = i2f32 y,
 			                    .width = i2f32 btn_w, .height = i2f32 btn_h },
@@ -364,7 +364,7 @@ $ click : @vec App -> @int32 -> @int32 -> @int32 -> @int32 -> <@io> @int =
 			| [] => 0
 			| a :: rest =>
 				let y = button_y i in
-				if in_box mx my pad y btn_w btn_h ?= 1 => launch a ; 1
+				if in_box mx my pad y btn_w btn_h == 1 => launch a ; 1
 				else click rest (i + 1) (budget - 1) mx my
 
 # -- frame loop --------------------------------------------------------------
@@ -378,15 +378,15 @@ $ click : @vec App -> @int32 -> @int32 -> @int32 -> @int32 -> <@io> @int =
 # and has nothing more to show (a web search, or launching an app).
 $ Next : @struct = q: @str, out: @str, done: @bool,
 
-# Dispatch by mode with explicit `?=` on the sigil byte. A `when`/`is` arm named
+# Dispatch by mode with explicit `==` on the sigil byte. A `when`/`is` arm named
 # by a lowercase binding would BIND (match anything) rather than compare, so the
 # first arm would always win; comparing the values is what makes each mode fire.
 $ commit : @str -> @str -> @vec App -> <@io> Next = \q out visible =
 	let m = mode_of q in
-	if m ?= mode_run => Next.{ .q = "", .out = run_capture (payload q), .done = @false }
-	else if m ?= mode_search =>
+	if m == mode_run => Next.{ .q = "", .out = run_capture (payload q), .done = @false }
+	else if m == mode_search =>
 		open_search (payload q) ; Next.{ .q = "", .out = out, .done = @true }
-	else if m ?= mode_tool =>
+	else if m == mode_tool =>
 		let cmd = tool_cmd (payload q) in
 		if is_empty cmd => Next.{ .q = q, .out = out, .done = @false }
 		else Next.{ .q = "", .out = run_capture cmd, .done = @false }
@@ -395,11 +395,11 @@ $ commit : @str -> @str -> @vec App -> <@io> Next = \q out visible =
 		| a :: _ => launch a ; Next.{ .q = q, .out = out, .done = @true }
 
 $ enter_pressed : {} -> @int32 = \u =
-	if isKeyPressed key_enter ?= 1 || isKeyPressed key_kp_enter ?= 1 => 1 else 0
+	if isKeyPressed key_enter == 1 || isKeyPressed key_kp_enter == 1 => 1 else 0
 
 # A key fires this frame if pressed now or auto-repeating (so a held arrow key
 # keeps scrolling).
-$ key_step : @int32 -> @bool = \k = isKeyPressed k ?= 1 || isKeyPressedRepeat k ?= 1
+$ key_step : @int32 -> @bool = \k = isKeyPressed k == 1 || isKeyPressedRepeat k == 1
 
 # This frame's scroll intent in list rows: mouse wheel (a notch is ±1), arrow
 # keys by one row, page keys by a whole page. Positive scrolls DOWN the list.
@@ -422,17 +422,17 @@ $ clamp_off : @int32 -> @int32 -> @int32 = \off n =
 # up. Launching an app (click or plain Enter) or a web search closes the launcher.
 $ loop : Font -> @vec App -> @str -> @str -> @int32 -> @bool -> <@io> {} =
 	\font all query output off loaded =
-	if windowShouldClose {} ?= 0 =>
+	if windowShouldClose {} == 0 =>
 		let q = edit_query query,
-		    out = if isKeyPressed key_escape ?= 1 => ""
-		          else if q ?= query => output
+		    out = if isKeyPressed key_escape == 1 => ""
+		          else if q == query => output
 		          else "",
 		    typed = if is_empty q => @false else @true,
 		    all2 = if loaded => all else if typed => discover {} else all,
 		    loaded2 = if loaded => @true else typed,
 		    visible = filter_apps all2 q,
 		    n = app_count visible 0,
-		    base = if q ?= query => off else 0,
+		    base = if q == query => off else 0,
 		    off2 = clamp_off (base + scroll_delta {}) n,
 		    rows = min_i32 n rows_fit,
 		    shown = drop_apps visible off2,
@@ -440,10 +440,10 @@ $ loop : Font -> @vec App -> @str -> @str -> @int32 -> @bool -> <@io> {} =
 		    my = getMouseY {} in
 		render font q out shown rows mx my ;
 		let launched =
-			if isMouseButtonPressed mouse_button_left ?= 1 => click shown 0 rows mx my
+			if isMouseButtonPressed mouse_button_left == 1 => click shown 0 rows mx my
 			else 0 in
-		if launched ?= 1 => closeWindow {}
-		else if enter_pressed {} ?= 1 =>
+		if launched == 1 => closeWindow {}
+		else if enter_pressed {} == 1 =>
 			let nx = commit q out visible in
 			if nx.done => closeWindow {} else loop font all2 nx.q nx.out off2 loaded2
 		else loop font all2 q out off2 loaded2

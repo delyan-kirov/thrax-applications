@@ -36,8 +36,8 @@ types. The `@cast` intrinsic bridges them:
 ```
 $ read_chars : @str -> @str = \q =
 	let c = getCharPressed {} in            # c : @int32
-	if c ?= 0 => q
-	else if c >= 32 && c ?< 127 => read_chars (q ++ from_byte (@cast c))
+	if c == 0 => q
+	else if c >= 32 && c < 127 => read_chars (q ++ from_byte (@cast c))
 	else read_chars q                       # from_byte wants Int; @cast c widens it
 ```
 

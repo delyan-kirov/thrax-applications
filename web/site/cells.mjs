@@ -6,12 +6,12 @@ export const CELLS = [
   {
     id: "hello",
     title: "Hello, Thrax",
-    blurb: "A program is a list of typed definitions. `main : Int` is the entry point and its Int is the exit code. `HOST.print` prints a line; `;` runs one expression for its effect, then the next.",
+    blurb: "A program is a list of typed definitions. `main : @int` is the entry point and its @int is the exit code. `HOST.print` prints a line; `;` runs one expression for its effect, then the next.",
     src: `@mod MAIN
 
 $ with HOST
 
-$ main : Int =
+$ main : @int =
 	HOST.print "hello, Thrax";
 	HOST.print "every definition has a type, and main returns the exit code";
 	0
@@ -20,17 +20,17 @@ $ main : Int =
   {
     id: "recursion",
     title: "Functions and recursion",
-    blurb: "Functions are values: `\\n = ...` is a lambda, written under a separate type signature. `if` is an expression, and recursion is the loop. (`?<` is less-than; bare `<` is reserved for effect rows.)",
+    blurb: "Functions are values: `\\n = ...` is a lambda, written under a separate type signature. `if` is an expression, and recursion is the loop. (`<` is less-than; bare `<` is reserved for effect rows.)",
     src: `@mod MAIN
 
 $ with STR
 $ with HOST
 
-$ fib : Int -> Int = \\n =
-	if n ?< 2 => n
+$ fib : @int -> @int = \\n =
+	if n < 2 => n
 	else fib (n - 1) + fib (n - 2)
 
-$ main : Int =
+$ main : @int =
 	HOST.print <| "fib 10 = " ++ STR.from_int (fib 10);
 	HOST.print <| "fib 20 = " ++ STR.from_int (fib 20);
 	0
@@ -46,15 +46,15 @@ $ with STR
 $ with HOST
 
 $ Shape : @union =
-	Circle: Int,
-	Rect: {Int, Int},
+	Circle: @int,
+	Rect: {@int, @int},
 
-$ area : Shape -> Int = \\s =
+$ area : Shape -> @int = \\s =
 	is s
 		| Shape.Circle.{r} => 3 * r * r
 		| Shape.Rect.{w, h} => w * h
 
-$ main : Int =
+$ main : @int =
 	HOST.print <| "circle r=2: " ++ STR.from_int (area Shape.Circle.{2});
 	HOST.print <| "rect 3x4:   " ++ STR.from_int (area Shape.Rect.{3, 4});
 	0
@@ -69,10 +69,10 @@ $ main : Int =
 $ with STR
 $ with HOST
 
-$ Point : @struct = x: Int, y: Int,
-$ Point3 : @struct = with Point, z: Int,
+$ Point : @struct = x: @int, y: @int,
+$ Point3 : @struct = with Point, z: @int,
 
-$ main : Int =
+$ main : @int =
 	let p = Point3.{ .x = 1, .y = 2, .z = 3 } in
 	HOST.print <| "x + y + z = " ++ STR.from_int (p.x + p.y + p.z);
 	0
@@ -87,13 +87,13 @@ $ main : Int =
 $ with STR
 $ with HOST
 
-$ sign : Int -> Str = \\n =
+$ sign : @int -> @str = \\n =
 	is n
-		| m if m ?> 0 => "positive"
-		| m if m ?< 0 => "negative"
+		| m if m > 0 => "positive"
+		| m if m < 0 => "negative"
 	else "zero"
 
-$ main : Int =
+$ main : @int =
 	HOST.print <| "sign  7 = " ++ sign 7;
 	HOST.print <| "sign -3 = " ++ sign (0 - 3);
 	HOST.print <| "sign  0 = " ++ sign 0;
@@ -111,7 +111,7 @@ $ with HOST
 
 $ swap : {a, b} -> {b, a} = \\t = {t.1, t.0}
 
-$ main : Int =
+$ main : @int =
 	let
 		p = {42, "answer"},
 		q = swap p,
@@ -130,12 +130,12 @@ $ main : Int =
 $ with STR
 $ with HOST
 
-$ sum : @list Int -> Int = \\xs =
+$ sum : @list @int -> @int = \\xs =
 	is xs
 		| [] => 0
 		| h :: t => h + sum t
 
-$ main : Int =
+$ main : @int =
 	let xs = [1, 2, 3, 4, 5] in
 	HOST.print <| "sum [1..5] = " ++ STR.from_int (sum xs);
 	0
@@ -150,10 +150,10 @@ $ main : Int =
 $ with STR
 $ with HOST
 
-$ inc : Int -> Int = \\x = x + 1
-$ dbl : Int -> Int = \\x = x + x
+$ inc : @int -> @int = \\x = x + 1
+$ dbl : @int -> @int = \\x = x + x
 
-$ main : Int =
+$ main : @int =
 	let r = 5 |> inc |> dbl in
 	HOST.print <| "5 |> inc |> dbl = " ++ STR.from_int r;
 	0
@@ -168,12 +168,12 @@ $ main : Int =
 $ with STR
 $ with HOST
 
-$ compare : Int -> Int -> @bool = \\a b = a ?> b
+$ compare : @int -> @int -> @bool = \\a b = a > b
 
 $ max_of : a -> a -> a  @ctx compare : a -> a -> @bool = \\x y =
 	if compare x y => x else y
 
-$ main : Int =
+$ main : @int =
 	HOST.print <| "max_of 3 7 = " ++ STR.from_int (max_of 3 7);
 	0
 `,
@@ -187,9 +187,9 @@ $ main : Int =
 $ with STR
 $ with HOST
 
-$ Yield : @effect = yield : Int -> {},
+$ Yield : @effect = yield : @int -> {},
 
-$ sumGen : ({} -> <Yield> {}) -> Int = \\gen =
+$ sumGen : ({} -> <Yield> {}) -> @int = \\gen =
 	do gen {}
 	ctl k | Yield.yield v => v + k {}
 	      else _ => 0
@@ -197,7 +197,7 @@ $ sumGen : ({} -> <Yield> {}) -> Int = \\gen =
 $ gen3 : {} -> <Yield> {} =
 	Yield.yield 10 ; Yield.yield 20 ; Yield.yield 12 ; {}
 
-$ main : Int =
+$ main : @int =
 	HOST.print <| "sum of yields = " ++ STR.from_int (sumGen gen3);
 	0
 `,
@@ -211,13 +211,13 @@ $ main : Int =
 $ with STR
 $ with HOST
 
-$ Exn : @effect = throw : Str -> a,
+$ Exn : @effect = throw : @str -> a,
 
-$ safeDiv : Int -> Int -> Int = \\a b =
-	do if b ?= 0 => Exn.throw "divide by zero" else a / b
+$ safeDiv : @int -> @int -> @int = \\a b =
+	do if b == 0 => Exn.throw "divide by zero" else a / b
 	ctl k | Exn.throw msg => 0 - 1
 
-$ main : Int =
+$ main : @int =
 	HOST.print <| "84 / 2 = " ++ STR.from_int (safeDiv 84 2);
 	HOST.print <| "10 / 0 = " ++ STR.from_int (safeDiv 10 0);
 	0
@@ -232,16 +232,16 @@ $ main : Int =
 $ with STR
 $ with HOST
 
-$ State : @effect = get : {} -> Int, put : Int -> {},
+$ State : @effect = get : {} -> @int, put : @int -> {},
 
-$ runState : ({} -> <State> Int) -> Int -> Int = \\action s0 =
+$ runState : ({} -> <State> @int) -> @int -> @int = \\action s0 =
 	let h = do action {}
 	        ctl k | get u => \\s = k s s
 	              | put n => \\s = k {} n
 	              else x => \\s = x
 	 in h s0
 
-$ counter : {} -> <State> Int =
+$ counter : {} -> <State> @int =
 	let
 		x = get {},
 		_ = put <| x + 1,
@@ -249,7 +249,7 @@ $ counter : {} -> <State> Int =
 	 in
 		x + y
 
-$ main : Int =
+$ main : @int =
 	HOST.print <| "counter from 10 = " ++ STR.from_int (runState counter 10);
 	0
 `,
@@ -267,14 +267,14 @@ $ with HOST
 $ animate : @bool = @false
 
 # An effect standing for "recolor the scratchpad".
-$ ChangeColorEffect : @effect = recolor : Str -> {},
+$ ChangeColorEffect : @effect = recolor : @str -> {},
 
 # Host imports
-$ paint  : Str -> {}  = @extern "WASM" "change_color" ""
-$ random : Int -> Int = @extern "WASM" "random" ""
-$ delay  : Int -> {}  = @extern "WASM" "delay" ""
+$ paint  : @str -> {}  = @extern "WASM" "change_color" ""
+$ random : @int -> @int = @extern "WASM" "random" ""
+$ delay  : @int -> {}  = @extern "WASM" "delay" ""
 
-$ color : {} -> Str =
+$ color : {} -> @str =
 	"rgb(" ++ STR.from_int (random 256)
 	      ++ ", " ++ STR.from_int (random 256)
 	      ++ ", " ++ STR.from_int (random 256) ++ ")"
@@ -283,15 +283,15 @@ $ withColor : ({} -> <ChangeColorEffect> {}) -> {} = \\body =
 	do body {}
 	ctl k | ChangeColorEffect.recolor c => (if animate => paint c else {}) ; k {}
 
-$ spin : Int -> <ChangeColorEffect> {} = \\n =
-	if n ?= 0 => {}
+$ spin : @int -> <ChangeColorEffect> {} = \\n =
+	if n == 0 => {}
 	else
 		let c = color {} in
 		HOST.print c ;
 		recolor c ;
 		spin (n - 1)
 
-$ main : Int =
+$ main : @int =
 	delay 150 ;
 	withColor (\\u = spin 12) ;
 	0
