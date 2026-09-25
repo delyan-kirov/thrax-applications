@@ -265,33 +265,7 @@ fn pipeline(user_src: &str) -> Result<(Vec<LoweredProgram>, String), String> {
     }
     let checkers: Vec<frontend::Checker> = checkers.into_iter().map(|c| c.expect("all checked")).collect();
 
-    // Gather the checker resolutions lowering needs.
-    let mut resolved = frontend::Resolved::default();
-    for checker in &checkers {
-        let (exprs, pats) = checker.array_nodes();
-        resolved.array_exprs.extend(exprs.iter().copied());
-        resolved.array_pats.extend(pats.iter().copied());
-    resolved.tensor_exprs.extend(checker.tensor_nodes().iter().copied());
-        for (&site, names) in checker.promotions() { resolved.promotions.insert(site, names.clone()); }
-        for (&site, n) in checker.struct_lit_names() { resolved.struct_lit_names.insert(site, n.clone()); }
-        let (clits, obs) = checker.codata_sites(); resolved.codata_lits.extend(clits.iter().copied()); resolved.observations.extend(obs.iter().copied());
-        for (&site, &module) in checker.call_modules() {
-            resolved.call_modules.insert(site, module.to_string());
-        }
-        for (&site, key) in checker.overload_calls() {
-            resolved.overload_calls.insert(site, key.clone());
-        }
-        for (&body, key) in checker.def_keys() {
-            resolved.def_keys.insert(body, key.clone());
-        }
-        for (&site, args) in checker.implicit_calls() {
-            resolved.implicit_args.insert(site, args.clone());
-        }
-        for (&site, fields) in checker.with_fields() {
-            resolved.with_fields.insert(site, fields.clone());
-        }
-        resolved.extern_sigs.extend(checker.extern_sigs());
-    }
+    let resolved = frontend::collect_resolved(&checkers);
 
     // Lower every module (root first so its names win the unqualified fallback).
     let decls = frontend::Decls::collect(&ast, &programs);

@@ -112,15 +112,17 @@ thrax build MAIN.thx   # emits MAIN.c, compiles and links -> ./MAIN
 
 ## Edit the app list
 
-The launchable programs are a plain list of records near the top of `MAIN.thx`:
+The fallback programs (used when no desktop entries are found) are a plain
+vector of records near the top of `MAIN.thx`:
 
 ```
-$ App : @struct = label: @str, cmd: @str,
-$ apps : @list App =
-    [ App.{ .label = "Terminal", .cmd = "xterm &" }
-    , App.{ .label = "Files",    .cmd = "xdg-open . &" }
-    , App.{ .label = "Browser",  .cmd = "firefox &" } ]
+$ App : @struct = label: @str, cmd: @str, terminal: @bool,
+
+$ fallback_apps : @vec App =
+	[ App.{ .label = "Terminal", .cmd = "xterm",      .terminal = @false }
+	, App.{ .label = "Files",    .cmd = "xdg-open .", .terminal = @false }
+	, App.{ .label = "Browser",  .cmd = "firefox",    .terminal = @false } ]
 ```
 
-Each `cmd` is handed to `system(3)`; the trailing `&` spawns it in the
-background so the launcher stays responsive.
+Each `cmd` is the raw program to run; `terminal` marks a CLI/TUI app that must
+be launched inside a terminal.

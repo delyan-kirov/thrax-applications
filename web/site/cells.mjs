@@ -123,14 +123,14 @@ $ main : @int =
   },
   {
     id: "lists",
-    title: "Lists",
-    blurb: "`[a, b, c]` builds a list, `h :: t` conses, `[]` is empty. Patterns mirror the sugar: `| []` and `| h :: t` walk a list one cell at a time, and together they cover every list, so no `else` is needed.",
+    title: "Sequences",
+    blurb: "`[a, b, c]` builds a `@vec`, the default sequence; `h :: t` prepends, `[]` is empty. Patterns mirror the sugar: `| []` and `| h :: t` walk a sequence one element at a time, and together they cover every one, so no `else` is needed.",
     src: `@mod MAIN
 
 $ with STR
 $ with HOST
 
-$ sum : @list @int -> @int = \\xs =
+$ sum : @vec @int -> @int = \\xs =
 	is xs
 		| [] => 0
 		| h :: t => h + sum t
