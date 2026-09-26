@@ -39,7 +39,7 @@ by value is skipped too (a pointer to it is fine). A nullary `typedef` to a stru
 ## Run it
 
 From this directory (the shell links `library/` so `CORE` resolves). The header
-path(s) are the command-line arguments to `main`; the rest stays configured by
+path(s) are the command-line arguments to `@main`; the rest stays configured by
 environment variables.
 
 ```
@@ -54,8 +54,9 @@ LIB=libfoo.so  MOD=Foo  OUT=foo.thx  thrax run MAIN.thx header.h [more.h ...]
 - `MOD` the generated module name (default `BINDINGS`).
 - `OUT` the output file; if unset, the bindings are written to stdout.
 
-`main : [n]@str -> <| e> Int` is a C-style entry: it returns an exit code (`0`)
-rather than printing a value, and the open effect row lets it do the file IO.
+`@main : @vec @str -> <@io> @int` is the program entry, the one signature the
+compiler accepts: it takes the argument vector (`args[0]` is the program) and
+returns an exit code, and its `<@io>` row covers the file IO.
 
 Example against the bundled `test.h`:
 

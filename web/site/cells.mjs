@@ -6,14 +6,14 @@ export const CELLS = [
   {
     id: "hello",
     title: "Hello, Thrax",
-    blurb: "A program is a list of typed definitions. `main : @int` is the entry point and its @int is the exit code. `HOST.print` prints a line; `;` runs one expression for its effect, then the next.",
+    blurb: "A program is a list of typed definitions. `@main` is the entry point, the one name the compiler knows: it takes the argument vector and returns the exit code. `HOST.print` prints a line; `;` runs one expression for its effect, then the next.",
     src: `@mod MAIN
 
 $ with HOST
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	HOST.print "hello, Thrax";
-	HOST.print "every definition has a type, and main returns the exit code";
+	HOST.print "every definition has a type, and @main returns the exit code";
 	0
 `,
   },
@@ -30,7 +30,7 @@ $ fib : @int -> @int = \\n =
 	if n < 2 => n
 	else fib (n - 1) + fib (n - 2)
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	HOST.print <| "fib 10 = " ++ STR.from_int (fib 10);
 	HOST.print <| "fib 20 = " ++ STR.from_int (fib 20);
 	0
@@ -54,7 +54,7 @@ $ area : Shape -> @int = \\s =
 		| Shape.Circle.{r} => 3 * r * r
 		| Shape.Rect.{w, h} => w * h
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	HOST.print <| "circle r=2: " ++ STR.from_int (area Shape.Circle.{2});
 	HOST.print <| "rect 3x4:   " ++ STR.from_int (area Shape.Rect.{3, 4});
 	0
@@ -72,7 +72,7 @@ $ with HOST
 $ Point : @struct = x: @int, y: @int,
 $ Point3 : @struct = with Point, z: @int,
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	let p = Point3.{ .x = 1, .y = 2, .z = 3 } in
 	HOST.print <| "x + y + z = " ++ STR.from_int (p.x + p.y + p.z);
 	0
@@ -93,7 +93,7 @@ $ sign : @int -> @str = \\n =
 		| m if m < 0 => "negative"
 	else "zero"
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	HOST.print <| "sign  7 = " ++ sign 7;
 	HOST.print <| "sign -3 = " ++ sign (0 - 3);
 	HOST.print <| "sign  0 = " ++ sign 0;
@@ -111,7 +111,7 @@ $ with HOST
 
 $ swap : {a, b} -> {b, a} = \\t = {t.1, t.0}
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	let
 		p = {42, "answer"},
 		q = swap p,
@@ -135,7 +135,7 @@ $ sum : @vec @int -> @int = \\xs =
 		| [] => 0
 		| h :: t => h + sum t
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	let xs = [1, 2, 3, 4, 5] in
 	HOST.print <| "sum [1..5] = " ++ STR.from_int (sum xs);
 	0
@@ -153,7 +153,7 @@ $ with HOST
 $ inc : @int -> @int = \\x = x + 1
 $ dbl : @int -> @int = \\x = x + x
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	let r = 5 |> inc |> dbl in
 	HOST.print <| "5 |> inc |> dbl = " ++ STR.from_int r;
 	0
@@ -173,7 +173,7 @@ $ compare : @int -> @int -> @bool = \\a b = a > b
 $ max_of : a -> a -> a  @ctx compare : a -> a -> @bool = \\x y =
 	if compare x y => x else y
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	HOST.print <| "max_of 3 7 = " ++ STR.from_int (max_of 3 7);
 	0
 `,
@@ -197,7 +197,7 @@ $ sumGen : ({} -> <Yield> {}) -> @int = \\gen =
 $ gen3 : {} -> <Yield> {} =
 	Yield.yield 10 ; Yield.yield 20 ; Yield.yield 12 ; {}
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	HOST.print <| "sum of yields = " ++ STR.from_int (sumGen gen3);
 	0
 `,
@@ -217,7 +217,7 @@ $ safeDiv : @int -> @int -> @int = \\a b =
 	do if b == 0 => Exn.throw "divide by zero" else a / b
 	ctl k | Exn.throw msg => 0 - 1
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	HOST.print <| "84 / 2 = " ++ STR.from_int (safeDiv 84 2);
 	HOST.print <| "10 / 0 = " ++ STR.from_int (safeDiv 10 0);
 	0
@@ -249,7 +249,7 @@ $ counter : {} -> <State> @int =
 	 in
 		x + y
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	HOST.print <| "counter from 10 = " ++ STR.from_int (runState counter 10);
 	0
 `,
@@ -291,7 +291,7 @@ $ spin : @int -> <ChangeColorEffect> {} = \\n =
 		recolor c ;
 		spin (n - 1)
 
-$ main : @int =
+$ @main : @vec @str -> <@io> @int = \\args =
 	delay 150 ;
 	withColor (\\u = spin 12) ;
 	0

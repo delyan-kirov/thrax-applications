@@ -419,10 +419,8 @@ $ getenv_or : @str -> @str -> <@io> @str = \name dflt =
 
 # The header paths are the command-line arguments (argv[0] is the program, so
 # the files start at index 1). With none given, fall back to `test.h`.
-$ collect : [n]@str -> @int -> @int -> @vec @str -> @vec @str = \args i n acc =
-	if i >= n => reverse acc else collect args (i + 1) n (@tensor_index args i :: acc)
-$ headers : [n]@str -> @vec @str = \args =
-	let hs = collect args 1 (@tensor_length args) [] in
+$ headers : @vec @str -> @vec @str = \args =
+	let hs = @vec_slice args 1 (@vec_len args) in
 	is hs | [] => ["test.h"] | _ => hs
 
 # Read one header and generate its bindings; a missing file becomes a note so a
@@ -439,7 +437,7 @@ $ gen_file : @str -> @str -> <@io> @str = \path lib =
 $ gen_all : @vec @str -> @str -> @str -> <@io> @str = \paths lib out =
 	is paths | [] => out | p :: r => gen_all r lib (out ++ gen_file p lib)
 
-$ main : [n]@str -> <| e> @int = \args =
+$ @main : @vec @str -> <@io> @int = \args =
 	let lib = getenv_or "LIB" "lib.so",
 	    modname = getenv_or "MOD" "BINDINGS",
 	    bindings = "@mod " ++ modname ++ "\n\n" ++ gen_all (headers args) lib "",

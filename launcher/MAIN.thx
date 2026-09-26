@@ -449,7 +449,7 @@ $ loop : Font -> @vec App -> @str -> @str -> @int32 -> @bool -> <@io> {} =
 		else loop font all2 q out off2 loaded2
 	else closeWindow {}
 
-$ main : {} -> <| e> @int = \u =
+$ @main : @vec @str -> <@io> @int = \args =
 	setConfigFlags (@cast flag_window_undecorated);
 	initWindow { .p0 = base_w, .p1 = base_h, .p2 = "" };
 	setTargetFPS 60;

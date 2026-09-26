@@ -1,16 +1,23 @@
 @mod MAIN
 
 # The Thrax web playground demo. Compiled to wasm by the ccg backend and run in
-# the browser; `main` is a @str, so the runtime prints it. It reads the compile-
-# time `TARGET` reflection (which the platform layer fixes per target) so the
-# same source visibly reports the target it was built for.
+# the browser. It reads the compile-time `TARGET` reflection (which the platform
+# layer fixes per target) so the same source visibly reports the target it was
+# built for.
 
 $ with STR
+
+# `puts` returns a C `int`. Declaring that width matters on wasm32, where the
+# linker checks signatures and a mismatched one becomes a trapping stub; `C.puts`
+# models the return as `@int` (64-bit), so this module binds it itself.
+$ puts : @str -> <@io> @int32 = @extern "C" "puts" "libc"
 
 $ fib : @int -> @int = \n =
 	if n < 2 => n else fib (n - 1) + fib (n - 2)
 
-$ main : @str =
+$ banner : @str =
 	"Thrax on " ++ TARGET.name
 	++ " (" ++ STR.from_int TARGET.int_bits ++ "-bit word); "
 	++ "fib 20 = " ++ STR.from_int (fib 20)
+
+$ @main : @vec @str -> <@io> @int = \args = puts banner; 0

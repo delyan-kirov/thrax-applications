@@ -138,34 +138,36 @@ pub fn compile(user_src: &str, mode: i32) -> String {
     }
 }
 
-/// Compile and run `user_src` (mode 0), returning `entry = value` or a rendered
-/// diagnostic.
+/// Compile and run `user_src` (mode 0), returning the entry's exit code or a
+/// rendered diagnostic. What the program prints goes to the host (`HOST.print`).
 pub fn run_source(user_src: &str) -> String {
     compile(user_src, 0)
 }
 
 fn run(user_src: &str) -> Result<String, String> {
-    let (lowered, entry) = pipeline(user_src)?;
+    let lowered = pipeline(user_src)?;
     let ir = frontend::ir::lower_modules(&lowered);
-    match interpreter::machine::eval(&ir, &entry) {
-        Ok(shown) => Ok(format!("{entry} = {shown}")),
-        Err(diag) => Err(diag.render("", &entry)),
+    // The entry is the program's `@main`, as everywhere else; the notebook has no
+    // command line, so argv holds just the program name.
+    match interpreter::machine::run_entry(&ir, frontend::ENTRY, vec!["playground".to_string()]) {
+        Ok(code) => Ok(format!("exit {code}")),
+        Err(diag) => Err(diag.render("", frontend::ENTRY)),
     }
 }
 
 fn emit_c(user_src: &str) -> Result<String, String> {
-    let (lowered, entry) = pipeline(user_src)?;
+    let lowered = pipeline(user_src)?;
     // A conventional host target so the generated C reads normally, independent
     // of the wasm build the playground itself runs as.
     let target = utilities::Target {
         os: utilities::Os::Linux,
         arch: utilities::Arch::X86_64,
     };
-    Ok(ccg::emit(&lowered, &entry, frontend::EntryKind::Value, target))
+    Ok(ccg::emit(&lowered, frontend::ENTRY, ccg::Entry::Main, target))
 }
 
 fn dump_ir(user_src: &str) -> Result<String, String> {
-    let (lowered, _entry) = pipeline(user_src)?;
+    let lowered = pipeline(user_src)?;
     Ok(format!("{:#?}", frontend::ir::lower_modules(&lowered)))
 }
 
@@ -188,8 +190,8 @@ fn dump_ast(user_src: &str) -> Result<String, String> {
 
 /// The pipeline up to (not including) execution: load, parse, check, and lower
 /// every module against the in-memory standard library. Returns the lowered
-/// modules (root first) and the entry-point name (`test`, else `main`).
-fn pipeline(user_src: &str) -> Result<(Vec<LoweredProgram>, String), String> {
+/// modules, root first.
+fn pipeline(user_src: &str) -> Result<Vec<LoweredProgram>, String> {
     let sources = gather_sources(user_src)?;
     let root_name = module_name(user_src);
 
@@ -277,15 +279,15 @@ fn pipeline(user_src: &str) -> Result<(Vec<LoweredProgram>, String), String> {
         .map(|&i| frontend::lower_program(&ast, &programs[i], &decls, &resolved))
         .collect();
 
-    let entry = ["test", "main"]
-        .into_iter()
-        .find(|name| lowered[0].globals.iter().any(|(n, _)| n == name));
-    let entry = match entry {
-        Some(e) => e.to_string(),
-        None => return Err(format!("module `{root_name}` has no `test` or `main` to run")),
-    };
+    if !lowered[0].globals.iter().any(|(n, _)| n == frontend::ENTRY) {
+        return Err(format!(
+            "module `{root_name}` has no `$ {} : {}` to run",
+            frontend::ENTRY,
+            frontend::ENTRY_SIG
+        ));
+    }
 
-    Ok((lowered, entry))
+    Ok(lowered)
 }
 
 // -- the wasm C-ABI seam ----------------------------------------------------
@@ -337,20 +339,24 @@ mod tests {
     use super::run_source;
 
     #[test]
-    fn runs_a_pure_program() {
-        let out = run_source("@mod MAIN\n$ main : Int = 6 * 7\n");
-        assert_eq!(out, "main = 42");
+    fn runs_a_program() {
+        let src = "@mod MAIN\n$ @main : @vec @str -> <@io> @int = \\args = 6 * 7 - 42\n";
+        assert_eq!(run_source(src), "exit 0");
     }
 
     #[test]
     fn imports_the_bundled_stdlib() {
-        let src = "@mod MAIN\n$ with STR\n$ main : Str = STR.from_int 123\n";
-        assert_eq!(run_source(src), "main = \"123\"");
+        let src = "@mod MAIN\n\
+                   $ with STR\n\
+                   $ @main : @vec @str -> <@io> @int = \\args =\n\
+                   \tif STR.from_int 123 == \"123\" => 0 else 1\n";
+        assert_eq!(run_source(src), "exit 0");
     }
 
     #[test]
     fn reports_a_type_error() {
-        let out = run_source("@mod MAIN\n$ main : Int = \"x\" + 1\n");
+        let src = "@mod MAIN\n$ @main : @vec @str -> <@io> @int = \\args = \"x\" + 1\n";
+        let out = run_source(src);
         assert!(out.contains("error") || out.contains("mismatch"), "{out}");
     }
 
@@ -359,7 +365,9 @@ mod tests {
         // `HOST.print` reaches a JS import only on wasm, so it faults if run
         // natively. Checking the IR still exercises parsing, resolution, and
         // type-checking of the bundled `HOST` module end to end.
-        let src = "@mod MAIN\n$ with HOST\n$ main : Int = HOST.print \"hi\"; 0\n";
+        let src = "@mod MAIN\n\
+                   $ with HOST\n\
+                   $ @main : @vec @str -> <@io> @int = \\args = HOST.print \"hi\"; 0\n";
         let ir = super::compile(src, 2);
         assert!(!ir.to_lowercase().contains("error"), "{ir}");
         assert!(ir.contains("WASM"), "{ir}");
