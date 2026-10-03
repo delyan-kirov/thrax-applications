@@ -31,9 +31,11 @@
 
         shellHook = ''
           echo "web playground shell. From the applications workspace root (..):"
-          echo "    cargo build -p playground --target wasm32-unknown-unknown --release"
-          echo "    cp target/wasm32-unknown-unknown/release/playground.wasm web/site/"
-          echo "    node web/smoke.mjs      # headless test    node web/serve.mjs   # serve"
+          echo "    node web/build.mjs      # rebuild site/playground.wasm, then smoke-test it"
+          echo "    node web/serve.mjs      # serve http://localhost:8000"
+          echo ""
+          echo "site/playground.wasm is checked in: rebuild it after any change to"
+          echo "crates/ or library/, or the site keeps running the older compiler."
         '';
       };
     };

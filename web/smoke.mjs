@@ -1,11 +1,11 @@
 // Headless smoke test for the browser build: load the Rust `playground.wasm` in
 // Node through the very same host bridge the page uses (web/site/host.mjs), run
-// programs, and assert their output. Exits non-zero on any mismatch. Run from
-// the repo root after building the wasm:
+// programs, and assert their output. Exits non-zero on any mismatch.
 //
-//   cargo build -p playground --target wasm32-unknown-unknown --release
-//   cp target/wasm32-unknown-unknown/release/playground.wasm web/site/
-//   node web/smoke.mjs
+// This tests whatever `site/playground.wasm` currently holds, which is a
+// checked-in binary. `node web/build.mjs` rebuilds it and then runs this, which
+// is the order you want: a pass here against a stale wasm says nothing about the
+// compiler as it stands.
 //
 // This guards the whole browser path: the compiler as wasm, the bundled standard
 // library, and the generic `@extern` host bridge, without a browser.

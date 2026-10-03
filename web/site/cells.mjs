@@ -160,21 +160,54 @@ $ @main : @vec @str -> <@io> @int = \\args =
 `,
   },
   {
-    id: "ctx",
-    title: "Implicit parameters with `@ctx`",
-    blurb: "You can add implicit parameters with `@ctx`.",
+    id: "interfaces",
+    title: "Interfaces resolved by type",
+    blurb: "An interface is a `@struct` whose fields are its operations, and implementing it is defining a value of that type. A function that needs one declares it as a `@ctx` first parameter, which call sites do not write: the compiler finds it by type. There is no overloading; one name has one type.",
     src: `@mod MAIN
 
 $ with STR
 $ with HOST
 
-$ compare : @int -> @int -> @bool = \\a b = a > b
+$ IArea : @struct t = area: t -> @int,
 
-$ max_of : a -> a -> a  @ctx compare : a -> a -> @bool = \\x y =
-	if compare x y => x else y
+$ Rect : @struct = w: @int, h: @int,
+$ impl_IArea_for_Rect : IArea Rect = .{ .area = \\r = r.w * r.h }
+
+$ Square : @struct = side: @int,
+$ impl_IArea_for_Square : IArea Square = .{ .area = \\s = s.side * s.side }
+
+# \`d\` is the context parameter. A recursive call names it with \`@ctx d\`; an
+# ordinary call site writes nothing.
+$ total : @ctx IArea t -> @vec t -> @int = \\d xs =
+	is xs
+		| [] => 0
+		| h :: rest => d.area h + total (@ctx d) rest
 
 $ @main : @vec @str -> <@io> @int = \\args =
-	HOST.print <| "max_of 3 7 = " ++ STR.from_int (max_of 3 7);
+	HOST.print <| "rects:   " ++ STR.from_int (total [Rect.{2, 3}, Rect.{1, 4}]);
+	HOST.print <| "squares: " ++ STR.from_int (total [Square.{3}, Square.{5}]);
+	0
+`,
+  },
+  {
+    id: "operators",
+    title: "Operators are ordinary functions",
+    blurb: "Nothing is special about `+`: it is a CORE function over the `IAdd` interface, so a type joins it by defining an instance. The same holds for `-`, `*`, `==`, `<` and the rest.",
+    src: `@mod MAIN
+
+$ with STR
+$ with HOST
+
+$ Money : @struct = cents: @int,
+
+$ impl_IAdd_for_Money : IAdd Money = .{ .add = \\a b = Money.{ .cents = a.cents + b.cents } }
+
+$ show : Money -> @str = \\m =
+	"$" ++ STR.from_int (m.cents / 100) ++ "." ++ STR.from_int (m.cents % 100)
+
+$ @main : @vec @str -> <@io> @int = \\args =
+	let paid = Money.{ .cents = 150 } + Money.{ .cents = 99 } in
+	HOST.print <| "1.50 + 0.99 = " ++ show paid;
 	0
 `,
   },

@@ -21,6 +21,12 @@ self-contained.
 - **[cbindgen](cbindgen/)** -- a C-header binding generator written in Thrax:
   reads a `.h`, emits Thrax `@extern` bindings for its enums, structs, unions, and
   functions.
+- **[web](web/)** -- the browser playground: the compiler itself built to
+  `wasm32-unknown-unknown` and driven from hand-written JS, so every example on
+  the page is compiled and run client-side. `site/playground.wasm` is checked in,
+  so rebuild it with `node web/build.mjs` after any change to `crates/` or
+  `library/`; otherwise the site keeps running whatever compiler it was last
+  built from.
 
 ## Adding an app as a submodule
 

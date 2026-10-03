@@ -11,54 +11,43 @@
 use frontend::lowering::data::Program as LoweredProgram;
 use frontend::{Ast, Item, Program};
 
-/// The bundled standard library, keyed by module name. `C` is the auto-injected
-/// libc namespace; the rest mirror `library/*.thx`. Included at build time so the
-/// wasm module needs no filesystem.
+/// The bundled standard library: module name to source text, one entry per
+/// `library/*.thx`, plus the playground-only `HOST`. Embedded at build time so
+/// the wasm module needs no filesystem. A new `library/*.thx` must be added
+/// here too; the tests below enforce it.
+const MODULES: &[(&str, &str)] = &[
+    ("C", include_str!("../../../../library/C.thx")),
+    ("CORE", include_str!("../../../../library/CORE.thx")),
+    ("CPX", include_str!("../../../../library/CPX.thx")),
+    ("DERIVE", include_str!("../../../../library/DERIVE.thx")),
+    ("IO", include_str!("../../../../library/IO.thx")),
+    ("LA", include_str!("../../../../library/LA.thx")),
+    ("MAP", include_str!("../../../../library/MAP.thx")),
+    ("MATH", include_str!("../../../../library/MATH.thx")),
+    ("OPT", include_str!("../../../../library/OPT.thx")),
+    ("PATH", include_str!("../../../../library/PATH.thx")),
+    ("RANDOM", include_str!("../../../../library/RANDOM.thx")),
+    ("RESULT", include_str!("../../../../library/RESULT.thx")),
+    ("SET", include_str!("../../../../library/SET.thx")),
+    ("STR", include_str!("../../../../library/STR.thx")),
+    ("VEC", include_str!("../../../../library/VEC.thx")),
+    // Playground-only: routes I/O to JavaScript host imports (no libc on wasm).
+    ("HOST", include_str!("host.thx")),
+];
+
 fn stdlib_source(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "C" => include_str!("../../../../library/C.thx"),
-        "CORE" => include_str!("../../../../library/CORE.thx"),
-        "MAP" => include_str!("../../../../library/MAP.thx"),
-        "SET" => include_str!("../../../../library/SET.thx"),
-        "VEC" => include_str!("../../../../library/VEC.thx"),
-        "STR" => include_str!("../../../../library/STR.thx"),
-        "OPT" => include_str!("../../../../library/OPT.thx"),
-        "RESULT" => include_str!("../../../../library/RESULT.thx"),
-        "MATH" => include_str!("../../../../library/MATH.thx"),
-        "PATH" => include_str!("../../../../library/PATH.thx"),
-        "RANDOM" => include_str!("../../../../library/RANDOM.thx"),
-        "IO" => include_str!("../../../../library/IO.thx"),
-        // Playground-only: routes I/O to JavaScript host imports (no libc on wasm).
-        "HOST" => include_str!("host.thx"),
-        _ => return None,
-    })
+    MODULES.iter().find(|(n, _)| *n == name).map(|(_, src)| *src)
 }
 
-/// The module name a source declares (`@mod NAME`), or `MAIN` if it will not
-/// parse far enough to tell.
-fn module_name(src: &str) -> String {
-    frontend::parse(src)
-        .ok()
-        .map(|p| p.ast.text(p.program.module).to_string())
-        .unwrap_or_else(|| "MAIN".to_string())
-}
-
-/// The modules a source imports (`$ with MOD`).
-fn imports_of(src: &str) -> Vec<String> {
-    let Ok(parsed) = frontend::parse(src) else {
-        return Vec::new();
-    };
-    parsed
-        .ast
-        .slice(parsed.program.items)
+/// The modules a parsed program imports (`$ with MOD`).
+fn imports_of(ast: &Ast, program: &Program) -> Vec<String> {
+    ast.slice(program.items)
         .iter()
         .filter_map(|item| match item {
             Item::Import { module, .. } => Some(
-                parsed
-                    .ast
-                    .slice(*module)
+                ast.slice(*module)
                     .iter()
-                    .map(|&part| parsed.ast.text(part))
+                    .map(|&part| ast.text(part))
                     .collect::<Vec<_>>()
                     .join("."),
             ),
@@ -87,40 +76,81 @@ fn topological_order(graph: &[Vec<usize>]) -> Vec<usize> {
     order
 }
 
-/// Resolve the user source plus every standard-library module it imports
-/// (transitively) into a `(name, source)` list, with `C` last. Mirrors the
-/// driver's `load_sources`, but every dependency comes from [`stdlib_source`].
-fn gather_sources(root_src: &str) -> Result<Vec<(String, String)>, String> {
-    let root_name = module_name(root_src);
-    let mut sources: Vec<(String, String)> = Vec::new();
-    let mut names: Vec<String> = Vec::new();
-    let mut queue: Vec<(String, String)> = vec![(root_name, root_src.to_string())];
-    while let Some((name, src)) = queue.pop() {
-        if names.contains(&name) {
+/// Every module of a compilation, parsed into one shared arena.
+struct Loaded<'a> {
+    ast: Ast,
+    /// Per module, parallel to `programs`: its name and source text. The source
+    /// is what a diagnostic renders against.
+    sources: Vec<(String, &'a str)>,
+    programs: Vec<Program>,
+    index: std::collections::HashMap<String, usize>,
+    root: usize,
+}
+
+/// Parse the user source and, transitively, every standard-library module it
+/// imports, into one arena. Mirrors the driver's `load_core`, but every
+/// dependency comes from [`MODULES`] rather than from disk.
+///
+/// A module is parsed exactly once: its imports are read off the AST, not off a
+/// throwaway re-parse of its text.
+fn load(user_src: &str) -> Result<Loaded<'_>, String> {
+    let mut ast = Ast::new();
+    let mut sources: Vec<(String, &str)> = Vec::new();
+    let mut programs: Vec<Program> = Vec::new();
+    let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+    // The root module names itself (`@mod NAME`); a source too broken to parse
+    // has no name to report a diagnostic against, so it borrows the usual one.
+    let root_program = match frontend::parse_into(ast, user_src) {
+        Ok((next, p)) => {
+            ast = next;
+            p
+        }
+        Err(diag) => return Err(diag.render(user_src, "MAIN")),
+    };
+    let root_name = ast.text(root_program.module).to_string();
+    let mut pending = imports_of(&ast, &root_program);
+    index.insert(root_name.clone(), 0);
+    sources.push((root_name, user_src));
+    programs.push(root_program);
+
+    // `CORE` is implicitly imported into every module (its `to_string`, its
+    // instances, the operators) and `C` is the auto-injected libc namespace,
+    // reachable qualified with no import. Both are always part of the program.
+    pending.push("CORE".to_string());
+    pending.push("C".to_string());
+
+    while let Some(name) = pending.pop() {
+        if index.contains_key(&name) {
             continue;
         }
-        let imports = imports_of(&src);
-        names.push(name.clone());
-        sources.push((name, src));
-        for imp in imports {
-            if names.contains(&imp) || queue.iter().any(|(n, _)| *n == imp) {
-                continue;
+        let Some(src) = stdlib_source(&name) else {
+            return Err(format!("cannot find module `{name}`"));
+        };
+        let program = match frontend::parse_into(ast, src) {
+            Ok((next, p)) => {
+                ast = next;
+                p
             }
-            match stdlib_source(&imp) {
-                Some(s) => queue.push((imp, s.to_string())),
-                None => return Err(format!("cannot find module `{imp}`")),
+            Err(diag) => return Err(diag.render(src, &name)),
+        };
+        for imp in imports_of(&ast, &program) {
+            if !index.contains_key(&imp) {
+                pending.push(imp);
             }
         }
+        index.insert(name.clone(), programs.len());
+        sources.push((name, src));
+        programs.push(program);
     }
-    if !names.iter().any(|n| n == "C") {
-        sources.push(("C".to_string(), stdlib_source("C").unwrap().to_string()));
-    }
-    // CORE is implicitly imported into every module (its `to_string` and the
-    // `+ - * / %` operator overloads), so always bundle it, even if unimported.
-    if !names.iter().any(|n| n == "CORE") {
-        sources.push(("CORE".to_string(), stdlib_source("CORE").unwrap().to_string()));
-    }
-    Ok(sources)
+
+    Ok(Loaded {
+        ast,
+        sources,
+        programs,
+        index,
+        root: 0,
+    })
 }
 
 /// What to produce from a source, matching the site's mode selector.
@@ -192,58 +222,40 @@ fn dump_ast(user_src: &str) -> Result<String, String> {
 /// every module against the in-memory standard library. Returns the lowered
 /// modules, root first.
 fn pipeline(user_src: &str) -> Result<Vec<LoweredProgram>, String> {
-    let sources = gather_sources(user_src)?;
-    let root_name = module_name(user_src);
-
-    let mut index = std::collections::HashMap::new();
-    for (i, (name, _)) in sources.iter().enumerate() {
-        index.insert(name.clone(), i);
-    }
-
-    // Parse every module into one shared arena.
-    let mut ast = Ast::new();
-    let mut programs: Vec<Program> = Vec::with_capacity(sources.len());
-    for (name, src) in &sources {
-        match frontend::parse_into(ast, src) {
-            Ok((next_ast, p)) => {
-                ast = next_ast;
-                programs.push(p);
-            }
-            Err(diag) => return Err(diag.render(src, name)),
-        }
-    }
+    let Loaded {
+        ast,
+        sources,
+        programs,
+        index,
+        root,
+    } = load(user_src)?;
 
     // Dependency graph (edges point at imports).
     let mut graph = vec![Vec::new(); programs.len()];
     for (i, program) in programs.iter().enumerate() {
-        for item in ast.slice(program.items) {
-            if let Item::Import { module, .. } = item {
-                let name = ast
-                    .slice(*module)
-                    .iter()
-                    .map(|&part| ast.text(part))
-                    .collect::<Vec<_>>()
-                    .join(".");
-                if let Some(&j) = index.get(&name) {
-                    graph[i].push(j);
-                }
+        for name in imports_of(&ast, program) {
+            if let Some(&j) = index.get(&name) {
+                graph[i].push(j);
             }
         }
     }
 
     // Type-check in dependency order, `C` and `CORE` first: `C` qualified-only
-    // (`C.sqrt`), `CORE` bare (its `to_string` and operator overloads), injected
+    // (`C.sqrt`), `CORE` bare (its `to_string` and its instances), injected
     // into every other module. Mirrors the driver.
-    let c_idx = sources.iter().position(|(n, _)| n == "C");
-    let core_idx = sources.iter().position(|(n, _)| n == "CORE");
+    let c_idx = index.get("C").copied();
+    let core_idx = index.get("CORE").copied();
     let mut order = topological_order(&graph);
     for &pre in [core_idx, c_idx].iter().flatten() {
         order.retain(|&i| i != pre);
         order.insert(0, pre);
     }
+    // One type store for the whole compilation: a `Type` is a handle into it, so
+    // a type crossing a module boundary has to address the same store.
+    let types = std::rc::Rc::new(frontend::Types::new());
     let mut checkers: Vec<Option<frontend::Checker>> = (0..programs.len()).map(|_| None).collect();
     for i in order {
-        let mut checker = frontend::Checker::new(&ast);
+        let mut checker = frontend::Checker::new(&ast, types.clone());
         if let Some(c) = c_idx {
             if c != i && Some(i) != core_idx {
                 checker.import_qualified(checkers[c].as_ref().expect("C checked first"));
@@ -265,13 +277,13 @@ fn pipeline(user_src: &str) -> Result<Vec<LoweredProgram>, String> {
             }
         }
     }
-    let checkers: Vec<frontend::Checker> = checkers.into_iter().map(|c| c.expect("all checked")).collect();
+    let checkers: Vec<frontend::Checker> =
+        checkers.into_iter().map(|c| c.expect("all checked")).collect();
 
     let resolved = frontend::collect_resolved(&checkers);
 
     // Lower every module (root first so its names win the unqualified fallback).
     let decls = frontend::Decls::collect(&ast, &programs);
-    let root = index[&root_name];
     let mut lower_order: Vec<usize> = (0..programs.len()).collect();
     lower_order.sort_by_key(|&i| i != root);
     let lowered: Vec<LoweredProgram> = lower_order
@@ -281,7 +293,8 @@ fn pipeline(user_src: &str) -> Result<Vec<LoweredProgram>, String> {
 
     if !lowered[0].globals.iter().any(|(n, _)| n == frontend::ENTRY) {
         return Err(format!(
-            "module `{root_name}` has no `$ {} : {}` to run",
+            "module `{}` has no `$ {} : {}` to run",
+            sources[root].0,
             frontend::ENTRY,
             frontend::ENTRY_SIG
         ));
@@ -336,7 +349,57 @@ pub extern "C" fn thx_out_len() -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::run_source;
+    use super::{run_source, MODULES};
+
+    // The playground embeds the standard library rather than reading it, so a
+    // module added to `library/` is invisible here until it is listed. Catches
+    // the drift that makes `$ with NEW` report "cannot find module".
+    #[test]
+    fn embedded_modules_match_the_library_directory() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../library");
+        let mut on_disk: Vec<String> = std::fs::read_dir(dir)
+            .expect("read library/")
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("thx"))
+            .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(String::from))
+            .collect();
+        on_disk.sort();
+        // HOST is the playground's own, with no file in `library/`.
+        let mut embedded: Vec<String> = MODULES
+            .iter()
+            .map(|(n, _)| n.to_string())
+            .filter(|n| n != "HOST")
+            .collect();
+        embedded.sort();
+        assert_eq!(
+            embedded, on_disk,
+            "a new library/*.thx must be added to MODULES"
+        );
+    }
+
+    // Catches a mis-paired `include_str!` among sixteen near-identical lines.
+    #[test]
+    fn embedded_sources_declare_their_own_module_name() {
+        for (name, src) in MODULES {
+            assert_eq!(src.lines().next(), Some(format!("@mod {name}").as_str()));
+        }
+    }
+
+    // Every bundled module has to type-check in the playground's own module
+    // graph, which differs from the driver's: `IO` and friends are reached
+    // without a filesystem, and `C` is stubbed by the JS host.
+    #[test]
+    fn every_bundled_module_is_importable() {
+        for (name, _) in MODULES {
+            let src = format!(
+                "@mod MAIN\n$ with {name}\n\
+                 $ @main : @vec @str -> <@io> @int = \\args = 0\n"
+            );
+            let out = run_source(&src);
+            assert_eq!(out, "exit 0", "`$ with {name}` does not compile:\n{out}");
+        }
+    }
 
     #[test]
     fn runs_a_program() {

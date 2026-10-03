@@ -8,6 +8,13 @@ name: Pages
 on:
   push:
     branches: [master]
+  # The compiler lives in another repo, so a push here is not the only thing
+  # that changes what the site serves: the build takes the compiler's master.
+  # Without a clock the published site stays pinned to the last push here, which
+  # is how it once ran a week-old compiler. A nightly rebuild tracks the
+  # compiler within a day and needs no cross-repo token.
+  schedule:
+    - cron: "0 5 * * *"
   workflow_dispatch:
 
 permissions:

@@ -241,13 +241,22 @@ for (const r of runners) {
   r.ta.addEventListener("keydown", e => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); runCell(r); }
   });
-  runCell(r); // pre-fill outputs so the page reads like a notebook
 }
 
 document.getElementById("boot").innerHTML =
   "Ready. This whole page is powered by the Thrax compiler (the Rust rewrite) " +
   "running as WebAssembly in your browser. " +
   "<a href=\"https://github.com/delyan-kirov/Thrax\">Read the source</a>.";
+
+// Pre-fill the outputs so the page reads like a notebook. Compiling is one long
+// synchronous call into wasm, so running every cell back to back would hold the
+// main thread and leave the editors dead until the last one finished. Yielding a
+// frame between cells keeps the page usable while the outputs fill in, top down.
+const nextFrame = () => new Promise(requestAnimationFrame);
+for (const r of runners) {
+  await nextFrame();
+  runCell(r);
+}
 </script>
 </body>
 </html>
