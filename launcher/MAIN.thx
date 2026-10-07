@@ -79,7 +79,7 @@ $ list_height : @int32 -> @int32 = \rows = top + rows * row_stride + pad
 
 # Is (mx, my) inside the axis-aligned box at (x, y) of size (w, h)?
 $ in_box : @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> @int32 -> @int =
-	\mx my x y w h =
+	\mx, my, x, y, w, h =
 		if mx >= x && mx < x + w && my >= y && my < y + h => 1 else 0
 
 # -- search state ------------------------------------------------------------
@@ -102,9 +102,9 @@ $ edit_query : @str -> @str = \q =
 	if isKeyPressed key_escape == 1 => "" else q2
 
 # Case-insensitive substring match; an empty query keeps every app.
-$ keep : App -> @str -> @bool = \a q = contains (to_lower a.label) (to_lower q)
+$ keep : App -> @str -> @bool = \a, q = contains (to_lower a.label) (to_lower q)
 
-$ filter_apps : @vec App -> @str -> @vec App = \apps q =
+$ filter_apps : @vec App -> @str -> @vec App = \apps, q =
 	is apps
 		| [] => []
 		| a :: rest =>
@@ -112,10 +112,10 @@ $ filter_apps : @vec App -> @str -> @vec App = \apps q =
 			if keep a q => a :: kept else kept
 
 # How many apps in the list, and dropping the first `n` (for the scroll offset).
-$ app_count : @vec App -> @int32 -> @int32 = \apps acc =
+$ app_count : @vec App -> @int32 -> @int32 = \apps, acc =
 	is apps | [] => acc | _ :: rest => app_count rest (acc + 1)
 
-$ drop_apps : @vec App -> @int32 -> @vec App = \apps n =
+$ drop_apps : @vec App -> @int32 -> @vec App = \apps, n =
 	if n <= 0 => apps
 	else is apps | [] => [] | _ :: rest => drop_apps rest (n - 1)
 
@@ -150,7 +150,7 @@ $ pclose : @int -> <@io> @int                   = @extern "C" "pclose" "libc"
 
 $ is_byte : @int -> @bool = \c = if c < 0 => @false else c <= 255
 
-$ drain : @int -> @int -> @str -> <@io> @str = \f budget acc =
+$ drain : @int -> @int -> @str -> <@io> @str = \f, budget, acc =
 	if budget <= 0 => acc
 	else
 		let c = C.fgetc f in
@@ -198,7 +198,7 @@ $ capture_all : @str -> <@io> @str = \cmd =
 # "Www Mmm dd" date and the "hh:mm" time, dropping seconds and year.
 $ ctime : @str -> @str = @extern "C" "ctime" "libc"
 
-$ le8 : @int -> @int -> @str = \t k =
+$ le8 : @int -> @int -> @str = \t, k =
 	if k >= 8 => "" else (@array_push "" (t % 256)) ++ le8 (t / 256) (k + 1)
 
 $ clock_str : {} -> <@io> @str = \u =
@@ -255,22 +255,22 @@ $ discover : {} -> <@io> @vec App = \u =
 
 # -- window sizing -----------------------------------------------------------
 # The window grows to fit the captured output and shrinks back to the app list.
-$ max_i32 : @int32 -> @int32 -> @int32 = \a b = if a >= b => a else b
-$ min_i32 : @int32 -> @int32 -> @int32 = \a b = if a < b => a else b
+$ max_i32 : @int32 -> @int32 -> @int32 = \a, b = if a >= b => a else b
+$ min_i32 : @int32 -> @int32 -> @int32 = \a, b = if a < b => a else b
 
 # How many bytes equal `target` in `s` (the '\n' count gives the line count).
-$ count_byte : @str -> @int -> @int -> @int = \s target i =
+$ count_byte : @str -> @int -> @int -> @int = \s, target, i =
 	if i >= len s => 0
 	else (if at s i == target => 1 else 0) + count_byte s target (i + 1)
 
 # Width in pixels of one line of `s` drawn in `font` at `out_fs`.
-$ line_w : Font -> @str -> @int32 = \font s =
+$ line_w : Font -> @str -> @int32 = \font, s =
 	let m = measureTextEx { .p0 = font, .p1 = s, .p2 = out_fs, .p3 = spacing } in
 	f2i32 m.x
 
 # Width in pixels of the widest line of `s`. Walks line by line (`start` is the
 # current line's first byte), measuring each with the loaded font.
-$ widest : Font -> @str -> @int -> @int -> @int32 -> @int32 = \font s start i acc =
+$ widest : Font -> @str -> @int -> @int -> @int32 -> @int32 = \font, s, start, i, acc =
 	if i >= len s => max_i32 acc (line_w font (substr s start (len s)))
 	else if at s i == 10 =>
 		widest font s (i + 1) (i + 1) (max_i32 acc (line_w font (substr s start i)))
@@ -280,7 +280,7 @@ $ widest : Font -> @str -> @int -> @int -> @int32 -> @int32 = \font s start i ac
 # it grows with the number of visible rows (`rows`, already capped to `rows_fit`)
 # and never shrinks below `base_h`. With output it grows wide enough for the
 # longest line and tall enough for every line, both capped against the screen.
-$ fit_window : Font -> @str -> @int32 -> {} = \font output rows =
+$ fit_window : Font -> @str -> @int32 -> {} = \font, output, rows =
 	if is_empty output => setWindowSize { .p0 = base_w, .p1 = max_i32 base_h (list_height rows) }
 	else
 		let lines : @int32 = @cast (1 + count_byte output 10 0),
@@ -290,7 +290,7 @@ $ fit_window : Font -> @str -> @int32 -> {} = \font output rows =
 
 # Draw `s` at (x, y) in `font`; positions and the size cross to @float32 here.
 $ text : Font -> @str -> @int32 -> @int32 -> @float32 -> Color -> {} =
-	\font s x y size col =
+	\font, s, x, y, size, col =
 		drawTextEx { .p0 = font, .p1 = s,
 		             .p2 = Vector2.{ .x = i2f32 x, .y = i2f32 y },
 		             .p3 = size, .p4 = spacing, .p5 = col }
@@ -310,7 +310,7 @@ $ tool_cmd : @str -> @str = \name =
 # -- rendering ---------------------------------------------------------------
 # A hovered row is a filled rounded ("oval") box; an idle row is just its label
 # fenced by two thin divider lines (top and bottom edges).
-$ draw_row : @int32 -> @int -> {} = \y hover =
+$ draw_row : @int32 -> @int -> {} = \y, hover =
 	if hover == 1
 		=> drawRectangleRounded
 			{ .p0 = Rectangle.{ .x = i2f32 pad, .y = i2f32 y,
@@ -323,7 +323,7 @@ $ draw_row : @int32 -> @int -> {} = \y hover =
 # Draw at most `budget` rows starting at display row `i` (the list is already
 # offset by the scroll position, so `i` runs from 0 at the top of the window).
 $ draw_apps : Font -> @vec App -> @int32 -> @int32 -> @int32 -> @int32 -> {} =
-	\font apps i budget mx my =
+	\font, apps, i, budget, mx, my =
 		if budget <= 0 => {}
 		else is apps
 			| [] => {}
@@ -342,7 +342,7 @@ $ search_text : @str -> @str = \q = q ++ "_"
 # are visible (drives both the window height and how many rows get drawn). The
 # day-and-time header is recomputed here every frame (cheap: no fork).
 $ render : Font -> @str -> @str -> @vec App -> @int32 -> @int32 -> @int32 -> <@io> {} =
-	\font query output shown rows mx my =
+	\font, query, output, shown, rows, mx, my =
 		fit_window font output rows ;
 		beginDrawing {} ;
 		clearBackground bg ;
@@ -358,7 +358,7 @@ $ render : Font -> @str -> @str -> @vec App -> @int32 -> @int32 -> @int32 -> <@i
 # when a button was hit (so the loop can close the launcher), 0 otherwise. Only
 # the `budget` visible rows are hit-tested, matching what `draw_apps` drew.
 $ click : @vec App -> @int32 -> @int32 -> @int32 -> @int32 -> <@io> @int =
-	\apps i budget mx my =
+	\apps, i, budget, mx, my =
 		if budget <= 0 => 0
 		else is apps
 			| [] => 0
@@ -381,7 +381,7 @@ $ Next : @struct = q: @str, out: @str, done: @bool,
 # Dispatch by mode with explicit `==` on the sigil byte. A `when`/`is` arm named
 # by a lowercase binding would BIND (match anything) rather than compare, so the
 # first arm would always win; comparing the values is what makes each mode fire.
-$ commit : @str -> @str -> @vec App -> <@io> Next = \q out visible =
+$ commit : @str -> @str -> @vec App -> <@io> Next = \q, out, visible =
 	let m = mode_of q in
 	if m == mode_run => Next.{ .q = "", .out = run_capture (payload q), .done = @false }
 	else if m == mode_search =>
@@ -411,7 +411,7 @@ $ scroll_delta : {} -> @int32 = \u =
 	wheel + keys + pages
 
 # Clamp `off` into [0, n - rows_fit]: never past the last full page, never below 0.
-$ clamp_off : @int32 -> @int32 -> @int32 = \off n =
+$ clamp_off : @int32 -> @int32 -> @int32 = \off, n =
 	max_i32 0 (min_i32 off (max_i32 0 (n - rows_fit)))
 
 # The loop's state is the app list, the query, the on-screen output, the scroll
@@ -421,7 +421,7 @@ $ clamp_off : @int32 -> @int32 -> @int32 = \off n =
 # filters, and scrolls; clicks and the drawn rows use the SAME slice so they line
 # up. Launching an app (click or plain Enter) or a web search closes the launcher.
 $ loop : Font -> @vec App -> @str -> @str -> @int32 -> @bool -> <@io> {} =
-	\font all query output off loaded =
+	\font, all, query, output, off, loaded =
 	if windowShouldClose {} == 0 =>
 		let q = edit_query query,
 		    out = if isKeyPressed key_escape == 1 => ""

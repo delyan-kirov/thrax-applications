@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A catalogue, for the demo: thrax run MAIN.thx sample.xml -->
+<library name="Ada &amp; Co" open="true">
+  <book id="1" lang="en">
+    <title>Thrax &lt;in practice&gt;</title>
+    <author>A. Hacker</author>
+    <tags><tag/><tag>effects</tag><tag>parsing</tag></tags>
+    <note><![CDATA[CDATA keeps <markup> literal & unescaped]]></note>
+  </book>
+  <book id="2" lang="bg">
+    <title>Continuations</title>
+    <author>B. Writer</author>
+    <tags><tag>effects</tag></tags>
+  </book>
+  <book id="3" lang="en">
+    <title>Backtracking by Hand</title>
+    <author>A. Hacker</author>
+  </book>
+</library>

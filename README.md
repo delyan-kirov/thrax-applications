@@ -21,6 +21,10 @@ self-contained.
 - **[cbindgen](cbindgen/)** -- a C-header binding generator written in Thrax:
   reads a `.h`, emits Thrax `@extern` bindings for its enums, structs, unions, and
   functions.
+- **[xml](xml/)** -- an XML parser, serializer and query engine built on
+  algebraic effects: the cursor is a handler's parameter, an alternative is a
+  `fork` the handler resumes twice (so backtracking rewinds the input by
+  itself), and the same effect drives the query engine.
 - **[web](web/)** -- the browser playground: the compiler itself built to
   `wasm32-unknown-unknown` and driven from hand-written JS, so every example on
   the page is compiled and run client-side. `site/playground.wasm` is checked in,
