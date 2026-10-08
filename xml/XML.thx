@@ -65,17 +65,17 @@ $ Parsed : @union a = Ok : { a }, Bad : { Err },
 $ elem : @str -> @vec Attr -> List Node -> Node = \name, attrs, kids =
 	Node.Elem.{ Element.{ .name = name, .attrs = attrs, .kids = kids } }
 
-$ tag : Node -> @str = \n = is n | Node.Elem.{ e } => e.name else ""
+$ tag : Node -> @str = \n = is n | Node.Elem.{ e } => e.name | _ => ""
 
 $ attrs : Node -> @vec Attr = \n =
-	is n | Node.Elem.{ e } => e.attrs else @vec_new {}
+	is n | Node.Elem.{ e } => e.attrs | _ => @vec_new {}
 
-$ kids : Node -> List Node = \n = is n | Node.Elem.{ e } => e.kids else List.Nil
+$ kids : Node -> List Node = \n = is n | Node.Elem.{ e } => e.kids | _ => List.Nil
 
 # How many children, without building a vector of them.
 $ kid_count : Node -> @int = \n = list_len (kids n) 0
 
-$ is_elem : Node -> @bool = \n = is n | Node.Elem.{ e } => @true else @false
+$ is_elem : Node -> @bool = \n = is n | Node.Elem.{ e } => @true | _ => @false
 
 $ attr : Node -> @str -> Option @str = \n, want = attr_at (attrs n) want 0
 
@@ -86,7 +86,7 @@ $ text_of : Node -> @str = \n =
 	is n
 	| Node.Text.{ s } => s
 	| Node.Elem.{ e } => text_onto e.kids ""
-	else ""
+	| _ => ""
 
 # Children that are elements, which is usually what a caller wants to walk.
 $ elements : Node -> List Node = \n = list_filter is_elem (kids n)
@@ -130,10 +130,10 @@ $ parse : @str -> Parsed Node = \src = run_parser src document
 $ parse_fragment : @str -> Parsed (@vec Node) = \src =
 	run_parser src (\u = content (@vec_new {}) {})
 
-$ is_ok : Parsed a -> @bool = \r = is r | Parsed.Ok.{ v } => @true else @false
+$ is_ok : Parsed a -> @bool = \r = is r | Parsed.Ok.{ v } => @true | _ => @false
 
 $ error_of : Parsed a -> Option Err = \r =
-	is r | Parsed.Bad.{ er } => Option.Some.{ er } else Option.None
+	is r | Parsed.Bad.{ er } => Option.Some.{ er } | _ => Option.None
 
 # The failure as a diagnostic block, in the compiler's own shape: the headline,
 # the place, the offending line and a caret under it, then what was found and any
@@ -170,7 +170,7 @@ $ render : Node -> @str = \n =
 		let open = "<" ++ e.name ++ render_attrs e.attrs 0 "" in
 		is e.kids
 		| List.Nil => open ++ "/>"
-		else open ++ ">" ++ render_kids e.kids "" ++ "</" ++ e.name ++ ">"
+		| _ => open ++ ">" ++ render_kids e.kids "" ++ "</" ++ e.name ++ ">"
 
 # ==========================================================================
 # Queries
@@ -185,7 +185,7 @@ $ matches : ({} -> <Pick, Choice, Soft> a) -> @vec a = \body =
 	   | Pick.one_of xs => pick_each k xs (@vec_new {})
 	   | Choice.fork u => append (k @true) (k @false)
 	   | Soft.reject er => @vec_new {}
-	   else v => v
+	   | v => v
 
 # The first outcome, exploring no further than it has to.
 $ match_first : ({} -> <Pick, Choice, Soft> a) -> Option a = \body =
@@ -193,9 +193,9 @@ $ match_first : ({} -> <Pick, Choice, Soft> a) -> Option a = \body =
 	ctl k
 	   | Pick.one_of xs => first_of k xs
 	   | Choice.fork u =>
-	       (is k @true | Option.Some.{ v } => Option.Some.{ v } else k @false)
+	       (is k @true | Option.Some.{ v } => Option.Some.{ v } | _ => k @false)
 	   | Soft.reject er => Option.None
-	   else v => v
+	   | v => v
 
 # Prune this branch: it is not a match.
 $ no_match : {} -> <Pick, Choice, Soft> a = \u =
@@ -262,7 +262,7 @@ $ scan_from : @str -> @int -> ({} -> <Scan, Choice, Soft, Hard> a)
 		ctl @oneshot k
 		   | Scan.view u => \p = (k View.{ .src = src, .at = p }) p
 		   | Scan.bump n => \p = (k {}) (p + n)
-		   else x => \p = x
+		   | x => \p = x
 	 in run from
 
 # The top-level cursor, for the deterministic layer: every branch in this parser
@@ -273,7 +273,7 @@ $ scan_all : @str -> ({} -> <Scan, Hard> a) -> <Hard> a = \src, body =
 		ctl @oneshot k
 		   | Scan.view u => \p = (k View.{ .src = src, .at = p }) p
 		   | Scan.bump n => \p = (k {}) (p + n)
-		   else x => \p = x
+		   | x => \p = x
 	 in run 0
 
 # Backtracking search for the first branch that gets through. `fork`'s clause
@@ -295,13 +295,13 @@ $ search : ({} -> <Choice, Soft, Hard> a) -> <Hard> Parsed a = \body =
 	             | Parsed.Ok.{ w } => Parsed.Ok.{ w }
 	             | Parsed.Bad.{ e2 } => Parsed.Bad.{ furthest e1 e2 }))
 	   | Soft.reject er => Parsed.Bad.{ er }
-	   else x => x
+	   | x => x
 
 # `fatal` ends the parse: handled outside every choice point, so none retries it.
 $ guard : ({} -> <Hard> (Parsed a)) -> Parsed a = \body =
 	do body {}
 	ctl k | Hard.fatal er => Parsed.Bad.{ er }
-	      else x => x
+	      | x => x
 
 $ run_parser : @str -> ({} -> <Scan, Hard> a) -> Parsed a = \src, body =
 	guard (\u = Parsed.Ok.{ scan_all src body })
@@ -398,7 +398,7 @@ $ until_past : @str -> @str -> @int -> {} -> <Scan, Hard> @str = \close, what, o
 	is find_from v.src close v.at
 	| Option.Some.{ at } =>
 		(bump (at + @array_len close - v.at) ; @array_slice v.src v.at at)
-	else
+	| _ =>
 		fatal (broken opened
 			("unterminated " ++ what ++ ": no `" ++ close ++ "` before the end of the input")
 			("the " ++ what ++ " starts here"))
@@ -700,7 +700,7 @@ $ attr_at : @vec Attr -> @str -> @int -> Option @str = \as, want, i =
 		if a.name == want => Option.Some.{ a.value } else attr_at as want (i + 1)
 
 $ text_onto : List Node -> @str -> @str = \ns, acc =
-	is ns | List.Cons.{ h, t } => text_onto t (acc ++ text_of h) else acc
+	is ns | List.Cons.{ h, t } => text_onto t (acc ++ text_of h) | _ => acc
 
 $ render_attrs : @vec Attr -> @int -> @str -> @str = \as, i, acc =
 	if i >= @vec_len as => acc
@@ -709,29 +709,29 @@ $ render_attrs : @vec Attr -> @int -> @str -> @str = \as, i, acc =
 		render_attrs as (i + 1) (acc ++ " " ++ a.name ++ "=\"" ++ encode_attr a.value ++ "\"")
 
 $ render_kids : List Node -> @str -> @str = \ns, acc =
-	is ns | List.Cons.{ h, t } => render_kids t (acc ++ render h) else acc
+	is ns | List.Cons.{ h, t } => render_kids t (acc ++ render h) | _ => acc
 
 # Resume a continuation with every candidate, collecting all of the outcomes.
 $ pick_each : (Node -> @vec a) -> List Node -> @vec a -> @vec a = \k, xs, acc =
-	is xs | List.Cons.{ h, t } => pick_each k t (append acc (k h)) else acc
+	is xs | List.Cons.{ h, t } => pick_each k t (append acc (k h)) | _ => acc
 
 # Resume a continuation with each candidate until one of them yields a match.
 $ first_of : (Node -> Option a) -> List Node -> Option a = \k, xs =
 	is xs
 	| List.Cons.{ h, t } =>
-		(is k h | Option.Some.{ v } => Option.Some.{ v } else first_of k t)
-	else Option.None
+		(is k h | Option.Some.{ v } => Option.Some.{ v } | _ => first_of k t)
+	| _ => Option.None
 
 # -- lists ------------------------------------------------------------------
 
 $ list_len : List Node -> @int -> @int = \l, acc =
-	is l | List.Cons.{ h, t } => list_len t (acc + 1) else acc
+	is l | List.Cons.{ h, t } => list_len t (acc + 1) | _ => acc
 
 $ list_filter : (Node -> @bool) -> List Node -> List Node = \ok, l =
 	is l
 	| List.Cons.{ h, t } =>
 		(if ok h => List.Cons.{ h, list_filter ok t } else list_filter ok t)
-	else List.Nil
+	| _ => List.Nil
 
 # A vector of children, in order, as a list.
 $ list_of : @vec Node -> List Node = \v = list_onto v (@vec_len v - 1) List.Nil
@@ -769,8 +769,8 @@ $ decode_onto : @str -> @int -> @str -> @str = \s, i, acc =
 			(let body = @array_slice s (i + 1) end in
 			 is entity body
 			 | Option.Some.{ rep } => decode_onto s (end + 1) (acc ++ rep)
-			 else decode_onto s (i + 1) (@array_push acc 38))
-		else decode_onto s (i + 1) (@array_push acc 38)
+			 | _ => decode_onto s (i + 1) (@array_push acc 38))
+		| _ => decode_onto s (i + 1) (@array_push acc 38)
 
 # A named or numeric reference, or `None` for anything left alone.
 $ entity : @str -> Option @str = \body =
@@ -792,7 +792,7 @@ $ numeric_entity : @str -> Option @str = \body =
 	let n = if hex => from_hex digits 0 0 else to_int digits in
 	is n
 	| Option.Some.{ v } => if v > 0 && v < 256 => Option.Some.{ from_byte v } else Option.None
-	else Option.None
+	| _ => Option.None
 
 $ from_hex : @str -> @int -> @int -> Option @int = \s, i, acc =
 	if i >= @array_len s => (if i == 0 => Option.None else Option.Some.{ acc })

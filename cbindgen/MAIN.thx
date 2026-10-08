@@ -126,7 +126,7 @@ $ clean_loop : @str -> @int -> @int -> @str -> @int -> @int -> @str =
 				if c == 42 => (if c2 == 47 => clean_loop s (i + 2) n out 0 0
 				               else clean_loop s (i + 1) n out 2 at_ls)
 				else clean_loop s (i + 1) n out 2 at_ls
-			else
+			| _ =>
 				if c == 47 => (if c2 == 47 => clean_loop s (i + 2) n out 1 at_ls
 				               else if c2 == 42 => clean_loop s (i + 2) n out 2 at_ls
 				               else clean_loop s (i + 1) n (@array_push out c) 0 0)

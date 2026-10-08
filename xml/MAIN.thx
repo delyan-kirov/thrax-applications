@@ -29,7 +29,7 @@ $ sample : @str =
 	++ "  </book>\n"
 	++ "</library>\n"
 
-$ root : Node = is parse sample | Parsed.Ok.{ n } => n else Node.Text.{ "" }
+$ root : Node = is parse sample | Parsed.Ok.{ n } => n | _ => Node.Text.{ "" }
 
 # -- structure --------------------------------------------------------------
 
@@ -69,8 +69,8 @@ $ ck_selfclose_attrs : @int =
 	| Parsed.Ok.{ n } =>
 		(is match_first (\u = tagged "b" (anywhere n))
 		 | Option.Some.{ b } => if attr_or b "k" "" == "v" => 0 else 1
-		 else 1)
-	else 1
+		 | _ => 1)
+	| _ => 1
 
 # -- queries ----------------------------------------------------------------
 
@@ -84,7 +84,7 @@ $ ck_path_miss : @int =
 $ ck_where : @int =
 	is match_first (\u = with_attr "lang" "bg" (tagged "book" (anywhere root)))
 	| Option.Some.{ b } => if unwrap_or (text_at "title" b) "" == "Continuations" => 0 else 1
-	else 1
+	| _ => 1
 
 # `all` enumerates every match; `first` stops at one.
 $ ck_all_titles : @int = if @vec_len (find_all "title" root) == 2 => 0 else 1
@@ -106,7 +106,7 @@ $ ck_custom_query : @int =
 # Rendering is not byte-for-byte round-tripping (whitespace and entity spelling
 # are normalized), but re-parsing what was rendered gives the same tree back.
 $ rendered : @str = render root
-$ reparsed : Node = is parse rendered | Parsed.Ok.{ n } => n else Node.Text.{ "" }
+$ reparsed : Node = is parse rendered | Parsed.Ok.{ n } => n | _ => Node.Text.{ "" }
 $ ck_roundtrip : @int = if render reparsed == rendered => 0 else 1
 
 $ ck_escapes : @int =
@@ -120,11 +120,11 @@ $ ck_attr_escapes : @int =
 # -- errors -----------------------------------------------------------------
 
 $ err_at : @str -> @int = \src =
-	is parse src | Parsed.Bad.{ er } => er.at else 0 - 1
+	is parse src | Parsed.Bad.{ er } => er.at | _ => 0 - 1
 
 # The rendered diagnostic, for the checks that pin what a reader is told.
 $ err_report : @str -> @str = \src =
-	is parse src | Parsed.Bad.{ er } => report "doc.xml" src er else ""
+	is parse src | Parsed.Bad.{ er } => report "doc.xml" src er | _ => ""
 
 $ says : @str -> @str -> @bool = \src, part = STR.contains (err_report src) part
 
@@ -203,7 +203,7 @@ $ ck_no_found_noise : @int =
 $ ck_fragment : @int =
 	is parse_fragment "<a/><b/>"
 	| Parsed.Ok.{ ns } => if @vec_len ns == 2 => 0 else 1
-	else 1
+	| _ => 1
 
 $ test : @int =
 	ck_root + ck_books + ck_entity_attr + ck_entity_text + ck_cdata
@@ -227,7 +227,7 @@ $ describe : Node -> @int -> <@io> {} = \n, depth =
 	 let t = trim (text_of n) in
 	 (is elements n
 	  | List.Nil => (if @array_len t > 0 => print (" " ++ t) else {})
-	  else {}) ;
+	  | _ => {}) ;
 	 print "\n" ;
 	 for (elements n) (\c = describe c (depth + 1)))
 

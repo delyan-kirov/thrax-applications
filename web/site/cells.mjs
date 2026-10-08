@@ -39,7 +39,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
   {
     id: "unions",
     title: "Sum types and pattern matching",
-    blurb: "A `@union` is a sum type; each variant can carry a payload. `is` tries arms top-to-bottom and binds the payload with `Tag.{..}`. `else` is an optional catch-all. You can drop it when the arms already cover every variant, as here.",
+    blurb: "A `@union` is a sum type; each variant can carry a payload. `is` tries arms top-to-bottom and binds the payload with `Tag.{..}`. A catch-all is just an arm whose pattern matches anything, `| _ => ...`. You can drop it when the arms already cover every variant, as here.",
     src: `@mod MAIN
 
 $ with STR
@@ -80,8 +80,8 @@ $ @main : @vec @str -> <@io> @int = \\args =
   },
   {
     id: "guards",
-    title: "Guards and the catch-all else",
-    blurb: "An arm may carry a guard: `| <pat> if <cond> => ...`. When the guard fails the match falls through to the next arm, and a final `else` catches everything the arms miss, here the zero case.",
+    title: "Guards and the catch-all arm",
+    blurb: "An arm may carry a guard: `| <pat> if <cond> => ...`. When the guard fails the match falls through to the next arm, and a final `| _ =>` arm catches everything the others miss, here the zero case.",
     src: `@mod MAIN
 
 $ with STR
@@ -91,7 +91,7 @@ $ sign : @int -> @str = \\n =
 	is n
 		| m if m > 0 => "positive"
 		| m if m < 0 => "negative"
-	else "zero"
+		| _ => "zero"
 
 $ @main : @vec @str -> <@io> @int = \\args =
 	HOST.print <| "sign  7 = " ++ sign 7;
@@ -124,7 +124,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
   {
     id: "lists",
     title: "Sequences",
-    blurb: "`[a, b, c]` builds a `@vec`, the default sequence; `h :: t` prepends, `[]` is empty. Patterns mirror the sugar: `| []` and `| h :: t` walk a sequence one element at a time, and together they cover every one, so no `else` is needed.",
+    blurb: "`[a, b, c]` builds a `@vec`, the default sequence; `h :: t` prepends, `[]` is empty. Patterns mirror the sugar: `| []` and `| h :: t` walk a sequence one element at a time, and together they cover every one, so no catch-all arm is needed.",
     src: `@mod MAIN
 
 $ with STR
@@ -178,7 +178,7 @@ $ impl_IArea_for_Square : IArea Square = .{ .area = \\s = s.side * s.side }
 
 # \`d\` is the context parameter. A recursive call names it with \`@ctx d\`; an
 # ordinary call site writes nothing.
-$ total : @ctx IArea t -> @vec t -> @int = \\d xs =
+$ total : @ctx IArea t -> @vec t -> @int = \\d, xs =
 	is xs
 		| [] => 0
 		| h :: rest => d.area h + total (@ctx d) rest
@@ -200,7 +200,7 @@ $ with HOST
 
 $ Money : @struct = cents: @int,
 
-$ impl_IAdd_for_Money : IAdd Money = .{ .add = \\a b = Money.{ .cents = a.cents + b.cents } }
+$ impl_IAdd_for_Money : IAdd Money = .{ .add = \\a, b = Money.{ .cents = a.cents + b.cents } }
 
 $ show : Money -> @str = \\m =
 	"$" ++ STR.from_int (m.cents / 100) ++ "." ++ STR.from_int (m.cents % 100)
@@ -214,7 +214,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
   {
     id: "effects-gen",
     title: "Algebraic effects · generators",
-    blurb: "Thrax's headline feature. An operation like `yield` is performed by calling it; a handler `do <body> ctl k | Op a => e` intercepts it, where `k` is the resumable continuation. Resuming `k` and adding the results turns a generator into a sum. No iterator protocol, just a handler.",
+    blurb: "Thrax's headline feature. An operation like `yield` is performed by calling it; a handler `do <body> ctl k | op a => e` intercepts it, where `k` is the resumable continuation. Resuming `k` and adding the results turns a generator into a sum, and the value arm `| _ => 0` handles the body finishing. No iterator protocol, just a handler.",
     src: `@mod MAIN
 
 $ with STR
@@ -225,7 +225,7 @@ $ Yield : @effect = yield : @int -> {},
 $ sumGen : ({} -> <Yield> {}) -> @int = \\gen =
 	do gen {}
 	ctl k | Yield.yield v => v + k {}
-	      else _ => 0
+	      | _ => 0
 
 $ gen3 : {} -> <Yield> {} =
 	Yield.yield 10 ; Yield.yield 20 ; Yield.yield 12 ; {}
@@ -246,7 +246,7 @@ $ with HOST
 
 $ Exn : @effect = throw : @str -> a,
 
-$ safeDiv : @int -> @int -> @int = \\a b =
+$ safeDiv : @int -> @int -> @int = \\a, b =
 	do if b == 0 => Exn.throw "divide by zero" else a / b
 	ctl k | Exn.throw msg => 0 - 1
 
@@ -267,11 +267,11 @@ $ with HOST
 
 $ State : @effect = get : {} -> @int, put : @int -> {},
 
-$ runState : ({} -> <State> @int) -> @int -> @int = \\action s0 =
+$ runState : ({} -> <State> @int) -> @int -> @int = \\action, s0 =
 	let h = do action {}
 	        ctl k | get u => \\s = k s s
 	              | put n => \\s = k {} n
-	              else x => \\s = x
+	              | x => \\s = x
 	 in h s0
 
 $ counter : {} -> <State> @int =

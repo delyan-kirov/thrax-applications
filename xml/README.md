@@ -22,7 +22,7 @@ says the root is not named here.
 ```thrax
 $ with XML
 
-$ doc : Node = is parse src | Parsed.Ok.{ n } => n else ...
+$ doc : Node = is parse src | Parsed.Ok.{ n } => n | _ => ...
 
 $ titles : @vec Node = find_all "title" doc
 $ english : @vec Node = find_where "book" "lang" "en" doc
