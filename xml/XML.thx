@@ -250,16 +250,13 @@ $ @private
 # position is the handler's parameter, so a resumed branch carries its own copy
 # of it: that is the whole mechanism behind rewinding.
 #
-# `@oneshot` applies here. Each clause hands `k` to a lambda, which no analysis
-# can see through, so without the annotation every `view` and every `bump` would
-# resume a continuation that MIGHT be resumed again, and so would copy the
-# captured stack rather than move it. Each clause in fact resumes exactly once.
-# Measured worth: about 3% on a 92KB document, since the slices a parser
-# captures are shallow and the runtime's allocation dominates.
+# Each clause hands `k` to a lambda, and the lambda resumes it once. By then the
+# lambda is the continuation's only owner, so the resume takes the captured stack
+# rather than copying it.
 $ scan_from : @str -> @int -> ({} -> <Scan, Choice, Soft, Hard> a)
 	-> <Choice, Soft, Hard> a = \src, from, body =
 	let run = do body {}
-		ctl @oneshot k
+		ctl k
 		   | Scan.view u => \p = (k View.{ .src = src, .at = p }) p
 		   | Scan.bump n => \p = (k {}) (p + n)
 		   | x => \p = x
@@ -270,7 +267,7 @@ $ scan_from : @str -> @int -> ({} -> <Scan, Choice, Soft, Hard> a)
 # operation, as above.
 $ scan_all : @str -> ({} -> <Scan, Hard> a) -> <Hard> a = \src, body =
 	let run = do body {}
-		ctl @oneshot k
+		ctl k
 		   | Scan.view u => \p = (k View.{ .src = src, .at = p }) p
 		   | Scan.bump n => \p = (k {}) (p + n)
 		   | x => \p = x

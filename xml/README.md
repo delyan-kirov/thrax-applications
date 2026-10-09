@@ -154,9 +154,9 @@ in 0.85s, 92KB in 4.0s, 185KB in 10.1s.
 The interesting part is what that time is *not* spent on. A variant of this
 parser with the alternation replaced by deterministic lookahead, and the
 `/>` fork replaced by a peek, runs at the **same speed** (within noise). The
-backtracking machinery is not what costs; `@oneshot` on the cursor handlers,
-which turns a slice copy per cursor operation back into a move, is worth about
-3%. A callgrind profile puts the time in the runtime instead:
+backtracking machinery is not what costs, and the cursor handlers' continuations
+move rather than copy (each is resumed once, by its only owner). A callgrind
+profile puts the time in the runtime instead:
 
 | | share of instructions |
 | --- | --- |
