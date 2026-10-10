@@ -50,29 +50,57 @@ applied only at the `@extern` boundary.
 ## Command modes
 
 The first byte of the query picks a mode; press **Enter** to commit it. With no
-sigil the query just filters the app list (unchanged), and apps still launch on
-click.
+sigil the query filters the app list, and Enter launches the first match.
 
-| Prefix | Example | Effect |
-| ------ | ------------- | ---------------------------------------------------- |
-| `!`    | `! htop`      | Spawn a terminal running the command, then close the launcher. |
-| `?`    | `? raylib`    | Open the query as a web search; the box clears, the launcher stays. |
-| `$`    | `$time`       | Run a curated tool in a terminal; the box clears. |
+| Prefix | Example    | Effect |
+| ------ | ---------- | ------ |
+| `!`    | `! uname`  | Run the command and show its output in the window (killed after `cmd_timeout` seconds). |
+| `?`    | `? raylib` | Open the query as a web search, then close the launcher. |
+| `$`    | `$time`    | Run a curated tool and show its output. |
 
 The `$` tools are a small table in `MAIN.thx`: `time` runs `date`, `cal` runs
 `cal`, `disk` runs `df -h`, `mem` runs `free -h`. An unknown name leaves the
-query in place so the typo stays visible. Every mode is `system(3)` underneath,
-so the terminal and search engine are two editable constants at the top of the
-file:
+query in place so the typo stays visible. The dispatch is a string-prefix match:
 
 ```
-$ terminal   : @str = "xterm"
-$ search_url : @str = "https://duckduckgo.com/?q="
+is m.query
+| "!" ++ cmd  => show_output m (run_capture (trim cmd))
+| "?" ++ q    => open_search (trim q) ; break {}
+| "$" ++ name => ...
+| _           => when (VEC.first m.visible) <| \a = launch a ; break {}
 ```
 
-`!` and `$` open `terminal -e sh -c '<cmd>; exec $SHELL'`, so the window stays
-open after the command exits. `?` hands the query to `xdg-open`, escaping spaces
-as `+`.
+The terminal (for `Terminal=true` apps) and the search engine are editable
+constants at the top of the file.
+
+## How it is put together
+
+The UI state is one `Model` record, reached through an effect instead of being
+threaded through every function:
+
+```
+$ Ui : @effect = model : {} -> Model, set : Model -> {},
+```
+
+`with_model` handles it by passing the model along, and the frame loop is CORE's
+`for` over the infinite `forever` stream. Each frame is a few steps that read and
+update the model; `break` (CORE's `Loop` effect) ends the loop, and `defer` closes
+the window however it ends:
+
+```
+defer closeWindow {}, unloadFont font in
+(with_model m0 <| \u =
+	defer stop_scan {} in
+	for forever <| \_ = frame font)
+```
+
+App discovery is a coroutine. A shell pipeline (one `awk` pass over the `.desktop` files, then `sort`) is
+started with `popen` before the window opens, and `scan_apps` reads it as if it
+owned the thread, performing `Feed.found app` per entry and `Feed.pause` at each
+frame boundary. It reads only after a zero-timeout `poll(2)` says the pipe is
+ready, so no frame ever blocks on it. The handler stores the paused continuation
+in the model, each frame resumes it with `@true`, and quitting resumes it with
+`@false` so its own `defer pclose f` reaps the child.
 
 Regenerate the bindings after a raylib upgrade:
 
@@ -113,16 +141,12 @@ thrax build MAIN.thx   # emits MAIN.c, compiles and links -> ./MAIN
 ## Edit the app list
 
 The fallback programs (used when no desktop entries are found) are a plain
-vector of records near the top of `MAIN.thx`:
+vector near the top of `MAIN.thx`, built with the `app` helper (label, command,
+whether it needs a terminal):
 
 ```
-$ App : @struct = label: @str, cmd: @str, terminal: @bool,
-
 $ fallback_apps : @vec App =
-	[ App.{ .label = "Terminal", .cmd = "xterm",      .terminal = @false }
-	, App.{ .label = "Files",    .cmd = "xdg-open .", .terminal = @false }
-	, App.{ .label = "Browser",  .cmd = "firefox",    .terminal = @false } ]
+	[ app "Terminal" "xterm"      @false
+	, app "Files"    "xdg-open ." @false
+	, app "Browser"  "firefox"    @false ]
 ```
-
-Each `cmd` is the raw program to run; `terminal` marks a CLI/TUI app that must
-be launched inside a terminal.
