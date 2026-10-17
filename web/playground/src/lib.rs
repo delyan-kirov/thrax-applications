@@ -99,7 +99,7 @@ fn load(user_src: &str) -> Result<Loaded<'_>, String> {
     let mut programs: Vec<Program> = Vec::new();
     let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
 
-    // The root module names itself (`@mod NAME`); a source too broken to parse
+    // The root module names itself (`$ @mod NAME`); a source too broken to parse
     // has no name to report a diagnostic against, so it borrows the usual one.
     let root_program = match frontend::parse_into(ast, user_src) {
         Ok((next, p)) => {
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn embedded_sources_declare_their_own_module_name() {
         for (name, src) in MODULES {
-            assert_eq!(src.lines().next(), Some(format!("@mod {name}").as_str()));
+            assert_eq!(src.lines().next(), Some(format!("$ @mod {name}").as_str()));
         }
     }
 
@@ -393,7 +393,7 @@ mod tests {
     fn every_bundled_module_is_importable() {
         for (name, _) in MODULES {
             let src = format!(
-                "@mod MAIN\n$ with {name}\n\
+                "$ @mod MAIN\n$ with {name}\n\
                  $ @main : @vec @str -> <@io> @int = \\args = 0\n"
             );
             let out = run_source(&src);
@@ -403,13 +403,13 @@ mod tests {
 
     #[test]
     fn runs_a_program() {
-        let src = "@mod MAIN\n$ @main : @vec @str -> <@io> @int = \\args = 6 * 7 - 42\n";
+        let src = "$ @mod MAIN\n$ @main : @vec @str -> <@io> @int = \\args = 6 * 7 - 42\n";
         assert_eq!(run_source(src), "exit 0");
     }
 
     #[test]
     fn imports_the_bundled_stdlib() {
-        let src = "@mod MAIN\n\
+        let src = "$ @mod MAIN\n\
                    $ with STR\n\
                    $ @main : @vec @str -> <@io> @int = \\args =\n\
                    \tif STR.from_int 123 == \"123\" => 0 else 1\n";
@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn reports_a_type_error() {
-        let src = "@mod MAIN\n$ @main : @vec @str -> <@io> @int = \\args = \"x\" + 1\n";
+        let src = "$ @mod MAIN\n$ @main : @vec @str -> <@io> @int = \\args = \"x\" + 1\n";
         let out = run_source(src);
         assert!(out.contains("error") || out.contains("mismatch"), "{out}");
     }
@@ -428,7 +428,7 @@ mod tests {
         // `HOST.print` reaches a JS import only on wasm, so it faults if run
         // natively. Checking the IR still exercises parsing, resolution, and
         // type-checking of the bundled `HOST` module end to end.
-        let src = "@mod MAIN\n\
+        let src = "$ @mod MAIN\n\
                    $ with HOST\n\
                    $ @main : @vec @str -> <@io> @int = \\args = HOST.print \"hi\"; 0\n";
         let ir = super::compile(src, 2);

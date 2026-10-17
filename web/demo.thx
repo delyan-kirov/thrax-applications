@@ -1,4 +1,4 @@
-@mod MAIN
+$ @mod MAIN
 
 # The Thrax web playground demo. Compiled to wasm by the ccg backend and run in
 # the browser. It reads the compile-time `TARGET` reflection (which the platform

@@ -7,7 +7,7 @@ export const CELLS = [
     id: "hello",
     title: "Hello, Thrax",
     blurb: "A program is a list of typed definitions. `@main` is the entry point, the one name the compiler knows: it takes the argument vector and returns the exit code. `HOST.print` prints a line; `;` runs one expression for its effect, then the next.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with HOST
 
@@ -21,7 +21,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "recursion",
     title: "Functions and recursion",
     blurb: "Functions are values: `\\n = ...` is a lambda, written under a separate type signature. `if` is an expression, and recursion is the loop. (`<` is less-than; bare `<` is reserved for effect rows.)",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
@@ -40,7 +40,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "unions",
     title: "Sum types and pattern matching",
     blurb: "A `@union` is a sum type; each variant can carry a payload. `is` tries arms top-to-bottom and binds the payload with `Tag.{..}`. A catch-all is just an arm whose pattern matches anything, `| _ => ...`. You can drop it when the arms already cover every variant, as here.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
@@ -64,7 +64,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "with",
     title: "Composing types with `with`",
     blurb: "You can copy a type's fields or variants into another with `with`.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
@@ -82,7 +82,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "guards",
     title: "Guards and the catch-all arm",
     blurb: "An arm may carry a guard: `| <pat> if <cond> => ...`. When the guard fails the match falls through to the next arm, and a final `| _ =>` arm catches everything the others miss, here the zero case.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
@@ -104,7 +104,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "tuples",
     title: "Tuples",
     blurb: "`{A, B}` is an anonymous product of any arity. Read elements positionally with `.0`/`.1`, and destructure with `{a, b}` patterns in `let`, lambdas and `is` arms. A `let` can bind several names, comma-separated.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
@@ -125,7 +125,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "lists",
     title: "Sequences",
     blurb: "`[a, b, c]` builds a `@vec`, the default sequence; `h :: t` prepends, `[]` is empty. Patterns mirror the sugar: `| []` and `| h :: t` walk a sequence one element at a time, and together they cover every one, so no catch-all arm is needed.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
@@ -145,7 +145,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "pipes",
     title: "Pipes and sequencing",
     blurb: "`x |> f` and `f <| x` are just application at the lowest precedence, so pipelines read in order. `;` runs the left side for effect, then yields the right.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
@@ -163,7 +163,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "interfaces",
     title: "Interfaces resolved by type",
     blurb: "An interface is a `@struct` whose fields are its operations, and implementing it is defining a value of that type. A function that needs one declares it as a `@ctx` first parameter, which call sites do not write: the compiler finds it by type. There is no overloading; one name has one type.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
@@ -178,7 +178,7 @@ $ impl_IArea_for_Square : IArea Square = .{ .area = \\s = s.side * s.side }
 
 # \`d\` is the context parameter. A recursive call names it with \`@ctx d\`; an
 # ordinary call site writes nothing.
-$ total : @ctx IArea t -> @vec t -> @int = \\d, xs =
+$ total : @ctx IArea t -> @vec t -> @int = \\d xs =
 	is xs
 		| [] => 0
 		| h :: rest => d.area h + total (@ctx d) rest
@@ -193,14 +193,14 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "operators",
     title: "Operators are ordinary functions",
     blurb: "Nothing is special about `+`: it is a CORE function over the `IAdd` interface, so a type joins it by defining an instance. The same holds for `-`, `*`, `==`, `<` and the rest.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
 
 $ Money : @struct = cents: @int,
 
-$ impl_IAdd_for_Money : IAdd Money = .{ .add = \\a, b = Money.{ .cents = a.cents + b.cents } }
+$ impl_IAdd_for_Money : IAdd Money = .{ .add = \\a b = Money.{ .cents = a.cents + b.cents } }
 
 $ show : Money -> @str = \\m =
 	"$" ++ STR.from_int (m.cents / 100) ++ "." ++ STR.from_int (m.cents % 100)
@@ -215,7 +215,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "effects-gen",
     title: "Algebraic effects · generators",
     blurb: "Thrax's headline feature. An operation like `yield` is performed by calling it; a handler `do <body> ctl k | op a => e` intercepts it, where `k` is the resumable continuation. Resuming `k` and adding the results turns a generator into a sum, and the value arm `| _ => 0` handles the body finishing. No iterator protocol, just a handler.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
@@ -239,14 +239,14 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "effects-exn",
     title: "Algebraic effects · exceptions",
     blurb: "The same machine gives you exceptions: a handler that simply ignores `k` never resumes. `throw`'s result type is polymorphic (`a`) because it never returns to the call site. `Exn` is handled inside `safeDiv`, so `safeDiv` is pure. Its type carries no effect.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
 
 $ Exn : @effect = throw : @str -> a,
 
-$ safeDiv : @int -> @int -> @int = \\a, b =
+$ safeDiv : @int -> @int -> @int = \\a b =
 	do if b == 0 => Exn.throw "divide by zero" else a / b
 	ctl k | Exn.throw msg => 0 - 1
 
@@ -260,14 +260,14 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "effects-state",
     title: "Algebraic effects · state",
     blurb: "Mutable-looking state with no mutation: each handler clause returns a state-transforming function, and the handler threads the state through the resumptions. `counter` reads with `get`, writes with `put`, and never names a mutable cell.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST
 
 $ State : @effect = get : {} -> @int, put : @int -> {},
 
-$ runState : ({} -> <State> @int) -> @int -> @int = \\action, s0 =
+$ runState : ({} -> <State> @int) -> @int -> @int = \\action s0 =
 	let h = do action {}
 	        ctl k | get u => \\s = k s s
 	              | put n => \\s = k {} n
@@ -291,7 +291,7 @@ $ @main : @vec @str -> <@io> @int = \\args =
     id: "host",
     title: "Talking to the host · WASM externs",
     blurb: "The compiler was ported to web assembly and since the language has an ffi functionality with `@extern \"WASM\" \"name\"` we can call JavaScript functions. See what happens if you make `animate` true.",
-    src: `@mod MAIN
+    src: `$ @mod MAIN
 
 $ with STR
 $ with HOST

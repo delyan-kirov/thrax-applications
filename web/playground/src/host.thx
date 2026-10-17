@@ -1,4 +1,4 @@
-@mod HOST
+$ @mod HOST
 
 # The playground's window onto the embedding host. In the browser the compiler
 # runs as WebAssembly with no libc, so `@extern "C"` symbols (stdout, puts, ...)

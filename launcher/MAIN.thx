@@ -1,4 +1,4 @@
-@mod MAIN
+$ @mod MAIN
 
 # \file MAIN.thx
 # \info A minimal program launcher, written in Thrax against raylib. Type to
@@ -21,6 +21,7 @@
 $ with RAYLIB
 $ with STR
 $ with OPT
+$ with VEC
 
 # Spawn a program (fire-and-forget) via libc. The `&` in the command returns at
 # once. Not part of raylib, so it stays a local `@extern`.
@@ -47,7 +48,7 @@ $ cmd_timeout : @str = "2"   # seconds a captured `!`/`$` command may run before
 # is the lowercased label, computed once so filtering does not redo it per frame.
 $ App : @struct = label: @str, key: @str, cmd: @str, terminal: @bool,
 
-$ app : @str -> @str -> @bool -> App = \label, cmd, term =
+$ app : @str -> @str -> @bool -> App = \label cmd term =
 	App.{ .label = label, .key = to_lower label, .cmd = cmd, .terminal = term }
 
 $ fallback_apps : @vec App =
@@ -81,8 +82,8 @@ $ f2i32 : @float32 -> @int32 = \x = @cast (C.f2i x)
 # List positions are @int (they index a @vec); pixels are @int32 (raylib's).
 $ px : @int -> @int32 = \n = @cast n
 
-$ max_i32 : @int32 -> @int32 -> @int32 = \a, b = if a >= b => a else b
-$ min_i32 : @int32 -> @int32 -> @int32 = \a, b = if a < b => a else b
+$ max_i32 : @int32 -> @int32 -> @int32 = \a b = if a >= b => a else b
+$ min_i32 : @int32 -> @int32 -> @int32 = \a b = if a < b => a else b
 
 # One list row is a button plus its trailing gap. `rows_fit` is how many rows fit
 # before `max_list_h`; `list_height` is the window height that shows `rows` of them.
@@ -92,7 +93,7 @@ $ list_height : @int -> @int32 = \rows = top + px rows * row_stride + pad
 $ row_y       : @int -> @int32 = \i = top + px i * row_stride
 
 # The list row under (mx, my), if any. The gap below a row belongs to no row.
-$ row_at : @int32 -> @int32 -> @int -> Option @int = \mx, my, rows =
+$ row_at : @int32 -> @int32 -> @int -> Option @int = \mx my rows =
 	let r : @int = @cast ((my - top) / row_stride) in
 	if
 		mx < pad || mx >= pad + btn_w || my < top => Option.None,
@@ -120,16 +121,16 @@ $ modify : (Model -> Model) -> <Ui> {} = \f = Ui.set (f (Ui.model {}))
 
 # Handle `Ui` by passing the model along: each clause returns a function of the
 # current model, so `body` sees every `set` that came before.
-$ with_model : Model -> ({} -> <Ui, @io> {}) -> <@io> {} = \m0, body =
+$ with_model : Model -> ({} -> <Ui, @io> {}) -> <@io> {} = \m0 body =
 	let run = do body {}
 		ctl k | Ui.model u => \m = (k m) m
 		      | Ui.set m2  => \m = (k {}) m2
 		      | _          => \m = {}
 	in run m0
 
-$ matching : @vec App -> @str -> @vec App = \apps, q =
+$ matching : @vec App -> @str -> @vec App = \apps q =
 	let needle = to_lower q in
-	formap apps <| \a = if contains a.key needle => a else continue {}
+	formap apps <| \a = if STR.contains a.key needle => a else continue {}
 
 $ refilter : Model -> Model = \m = Model.{ .visible = matching m.apps m.query | m }
 
@@ -182,12 +183,12 @@ $ readable : @int -> <@io> @bool = \f =
 $ is_byte : @int -> @bool = \c = if c < 0 => @false else c <= 255
 
 # One line from a stream, without its '\n'; `None` once the stream has ended.
-$ read_line : @int -> @str -> <@io> Option @str = \f, acc =
+$ read_line : @int -> @str -> <@io> Option @str = \f acc =
 	let c = C.fgetc f in
 	if
 		c == 10 => Option.Some.{ acc },
 		is_byte c => read_line f (@array_push acc c),
-		is_empty acc => Option.None,
+		STR.is_empty acc => Option.None,
 	else Option.Some.{ acc }
 
 $ parse_app : @str -> Option App = \line =
@@ -208,7 +209,7 @@ $ produce : @int -> <Feed, @io> {} = \f =
 	when (Feed.pause {}) <| \_ =
 		if readable f => take f lines_per_frame else produce f
 
-$ take : @int -> @int -> <Feed, @io> {} = \f, n =
+$ take : @int -> @int -> <Feed, @io> {} = \f n =
 	if n == 0 => produce f
 	else is read_line f ""
 		| Option.Some.{ line } =>
@@ -261,7 +262,7 @@ $ read_chars : @str -> @str = \q =
 	else read_chars q
 
 $ drop_last : @str -> @str = \s =
-	if len s > 0 => substr s 0 (len s - 1) else s
+	if STR.len s > 0 => substr s 0 (STR.len s - 1) else s
 
 $ pressed : I32 -> @bool = \k = isKeyPressed k == 1
 
@@ -275,7 +276,7 @@ $ edit_step : {} -> <Ui> {} = \_ =
 	let m = Ui.model {},
 	    q1 = read_chars m.query,
 	    q2 = if key_step key_backspace => drop_last q1 else q1,
-	    typed = if is_empty q2 => m.typed else @true in
+	    typed = if STR.is_empty q2 => m.typed else @true in
 	if
 		pressed key_escape => Ui.set (refilter Model.{ .query = "", .output = "", .off = 0 | m }),
 		q2 == m.query => {},
@@ -291,7 +292,7 @@ $ scroll_delta : {} -> @int = \_ =
 	wheel + keys + pages
 
 # Clamp `off` into [0, n - rows_fit]: never past the last full page, never below 0.
-$ clamp_off : @int -> @int -> @int = \off, n =
+$ clamp_off : @int -> @int -> @int = \off n =
 	let last = if n > rows_fit => n - rows_fit else 0 in
 	if off < 0 => 0, off > last => last else off
 
@@ -313,7 +314,7 @@ $ launch : App -> <@io> @int = \a =
 
 # Read a stream to its end, at most `budget` bytes, so a chatty command cannot
 # stall the frame loop.
-$ drain : @int -> @int -> @str -> <@io> @str = \f, budget, acc =
+$ drain : @int -> @int -> @str -> <@io> @str = \f budget acc =
 	if budget <= 0 => acc
 	else
 		let c = C.fgetc f in
@@ -358,7 +359,7 @@ $ tool_cmd : @str -> @str = \name =
 	| "mem"  => "free -h"
 	| _      => ""
 
-$ show_output : Model -> @str -> <Ui> {} = \m, out =
+$ show_output : Model -> @str -> <Ui> {} = \m out =
 	Ui.set (refilter Model.{ .query = "", .output = out, .off = 0 | m })
 
 # Enter commits the query by its leading sigil. `!` runs a shell command and `$`
@@ -380,7 +381,7 @@ $ enter_step : {} -> <Ui, Loop, @io> {} = \_ =
 # A click on a list row launches that row's app.
 $ click_step : {} -> <Ui, Loop, @io> {} = \_ =
 	let m = Ui.model {} in
-	when (isMouseButtonPressed mouse_button_left == 1 && is_empty m.output) <| \_ =
+	when (isMouseButtonPressed mouse_button_left == 1 && STR.is_empty m.output) <| \_ =
 		when (row_at (getMouseX {}) (getMouseY {}) (rows m)) <| \r =
 			launch (@vec_get m.visible (m.off + r)) ; break {}
 
@@ -393,7 +394,7 @@ $ click_step : {} -> <Ui, Loop, @io> {} = \_ =
 # "Www Mmm dd" date and the "hh:mm" time, dropping seconds and year.
 $ ctime : @str -> @str = @extern "C" "ctime" "libc"
 
-$ le8 : @int -> @int -> @str = \t, k =
+$ le8 : @int -> @int -> @str = \t k =
 	if k >= 8 => "" else (@array_push "" (t % 256)) ++ le8 (t / 256) (k + 1)
 
 $ clock_str : {} -> <@io> @str = \_ =
@@ -402,24 +403,24 @@ $ clock_str : {} -> <@io> @str = \_ =
 
 # Draw `s` at (x, y) in `font`; positions and the size cross to @float32 here.
 $ text : Font -> @str -> @int32 -> @int32 -> @float32 -> Color -> {} =
-	\font, s, x, y, size, col =
+	\font s x y size col =
 		drawTextEx { .p0 = font, .p1 = s,
 		             .p2 = Vector2.{ .x = i2f32 x, .y = i2f32 y },
 		             .p3 = size, .p4 = spacing, .p5 = col }
 
 # Width in pixels of the widest line of `s` drawn in `font` at `out_fs`.
-$ widest : Font -> @str -> @int32 = \font, s =
+$ widest : Font -> @str -> @int32 = \font s =
 	let w = \l = f2i32 (measureTextEx { .p0 = font, .p1 = l, .p2 = out_fs, .p3 = spacing }).x in
-	VEC.foldl (\acc, l = max_i32 acc (w l)) 0 (split s "\n")
+	VEC.foldl (\acc l = max_i32 acc (w l)) 0 (split s "\n")
 
 # The window fits what it shows. With no output it fits the app list, never
 # below `base_h`; with output it grows to the longest line and every line, both
 # capped against the screen. raylib is only asked when the size changes.
 $ resize_step : Font -> <Ui> {} = \font =
 	let m = Ui.model {},
-	    w = if is_empty m.output => base_w
+	    w = if STR.is_empty m.output => base_w
 	        else min_i32 1200 (max_i32 base_w (widest font m.output + 2 * pad)),
-	    h = if is_empty m.output => max_i32 base_h (list_height (rows m))
+	    h = if STR.is_empty m.output => max_i32 base_h (list_height (rows m))
 	        else min_i32 800 (top + px (@vec_len (split m.output "\n")) * line_h + pad) in
 	when (w != m.win_w || h != m.win_h) <| \_=
 		setWindowSize { .p0 = w, .p1 = h } ;
@@ -427,7 +428,7 @@ $ resize_step : Font -> <Ui> {} = \font =
 
 # A hovered row is a filled rounded ("oval") box; an idle row is just its label
 # fenced by two thin divider lines (top and bottom edges).
-$ draw_row : Font -> App -> @int32 -> @bool -> {} = \font, a, y, hover =
+$ draw_row : Font -> App -> @int32 -> @bool -> {} = \font a y hover =
 	(if hover
 		=> drawRectangleRounded
 			{ .p0 = Rectangle.{ .x = i2f32 pad, .y = i2f32 y,
@@ -438,7 +439,7 @@ $ draw_row : Font -> App -> @int32 -> @bool -> {} = \font, a, y, hover =
 			 drawLine { .p0 = pad, .p1 = y + btn_h, .p2 = pad + btn_w, .p3 = y + btn_h, .p4 = sep_col })) ;
 	text font a.label (pad + 16) (y + 14) ui_fs text_col
 
-$ draw_list : Font -> Model -> {} = \font, m =
+$ draw_list : Font -> Model -> {} = \font m =
 	let n = rows m,
 	    hover = row_at (getMouseX {}) (getMouseY {}) n in
 	for (range 0 (n - 1)) <| \i =
@@ -453,7 +454,7 @@ $ draw_step : Font -> <Ui, @io> {} = \font =
 	text font (clock_str {}) (pad + 12) 14 ui_fs sep_col ;
 	drawRectangle { .p0 = pad, .p1 = search_y, .p2 = btn_w, .p3 = btn_h, .p4 = btn_col } ;
 	text font (m.query ++ "_") (pad + 12) (search_y + 14) ui_fs text_col ;
-	(if is_empty m.output => draw_list font m
+	(if STR.is_empty m.output => draw_list font m
 	 else text font m.output pad top out_fs text_col) ;
 	endDrawing {}
 

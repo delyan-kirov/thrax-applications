@@ -1,4 +1,4 @@
-@mod XML
+$ @mod XML
 
 # \file XML.thx
 # \info An XML parser, serializer and query engine, written in Thrax over
@@ -62,7 +62,7 @@ $ Parsed : @union a = Ok : { a }, Bad : { Err },
 # -- accessors --------------------------------------------------------------
 
 # Build an element. The struct payload makes this worth having as a function.
-$ elem : @str -> @vec Attr -> List Node -> Node = \name, attrs, kids =
+$ elem : @str -> @vec Attr -> List Node -> Node = \name attrs kids =
 	Node.Elem.{ Element.{ .name = name, .attrs = attrs, .kids = kids } }
 
 $ tag : Node -> @str = \n = is n | Node.Elem.{ e } => e.name | _ => ""
@@ -77,9 +77,9 @@ $ kid_count : Node -> @int = \n = list_len (kids n) 0
 
 $ is_elem : Node -> @bool = \n = is n | Node.Elem.{ e } => @true | _ => @false
 
-$ attr : Node -> @str -> Option @str = \n, want = attr_at (attrs n) want 0
+$ attr : Node -> @str -> Option @str = \n want = attr_at (attrs n) want 0
 
-$ attr_or : Node -> @str -> @str -> @str = \n, want, d = unwrap_or (attr n want) d
+$ attr_or : Node -> @str -> @str -> @str = \n want d = unwrap_or (attr n want) d
 
 # All text in and under a node, concatenated.
 $ text_of : Node -> @str = \n =
@@ -144,7 +144,7 @@ $ error_of : Parsed a -> Option Err = \r =
 #        | <    <tags><tag>effects</tag></tags>
 #        |  ^
 #     note: found a space. A literal `<` in text must be written `&lt;`
-$ report : @str -> @str -> Err -> @str = \file, src, er =
+$ report : @str -> @str -> Err -> @str = \file src er =
 	let lc = line_col src er.at in
 	let line = line_at src er.at in
 	"error: " ++ er.msg ++ "\n"
@@ -211,33 +211,33 @@ $ descendant : Node -> <Pick, Choice, Soft> Node = \n =
 $ anywhere : Node -> <Pick, Choice, Soft> Node = \n =
 	if fork {} => n else descendant n
 
-$ tagged : @str -> Node -> <Pick, Choice, Soft> Node = \t, n =
+$ tagged : @str -> Node -> <Pick, Choice, Soft> Node = \t n =
 	if is_elem n && tag n == t => n else no_match {}
 
-$ with_attr : @str -> @str -> Node -> <Pick, Choice, Soft> Node = \key, v, n =
+$ with_attr : @str -> @str -> Node -> <Pick, Choice, Soft> Node = \key v n =
 	if attr_or n key "" == v => n else no_match {}
 
 # -- ready-made queries -----------------------------------------------------
 
 # Every element with this tag, at any depth, the root included.
-$ find_all : @str -> Node -> @vec Node = \t, root =
+$ find_all : @str -> Node -> @vec Node = \t root =
 	matches (\u = tagged t (anywhere root))
 
-$ find_one : @str -> Node -> Option Node = \t, root =
+$ find_one : @str -> Node -> Option Node = \t root =
 	match_first (\u = tagged t (anywhere root))
 
 # Every element with this tag that also carries this attribute value.
-$ find_where : @str -> @str -> @str -> Node -> @vec Node = \t, key, v, root =
+$ find_where : @str -> @str -> @str -> Node -> @vec Node = \t key v root =
 	matches (\u = with_attr key v (tagged t (anywhere root)))
 
 # Follow a chain of tags down the children: `["library", "book", "title"]`
 # matches a title whose parent is a book whose parent is the root library.
-$ find_path : @vec @str -> Node -> @vec Node = \path, root =
+$ find_path : @vec @str -> Node -> @vec Node = \path root =
 	if @vec_len path == 0 => @vec_new {}
 	else matches (\u = walk path 1 (tagged (@vec_get path 0) root))
 
 # The text of the first element with this tag.
-$ text_at : @str -> Node -> Option @str = \t, root =
+$ text_at : @str -> Node -> Option @str = \t root =
 	opt_map text_of (find_one t root)
 
 $ @private
@@ -254,7 +254,7 @@ $ @private
 # lambda is the continuation's only owner, so the resume takes the captured stack
 # rather than copying it.
 $ scan_from : @str -> @int -> ({} -> <Scan, Choice, Soft, Hard> a)
-	-> <Choice, Soft, Hard> a = \src, from, body =
+	-> <Choice, Soft, Hard> a = \src from body =
 	let run = do body {}
 		ctl k
 		   | Scan.view u => \p = (k View.{ .src = src, .at = p }) p
@@ -265,7 +265,7 @@ $ scan_from : @str -> @int -> ({} -> <Scan, Choice, Soft, Hard> a)
 # The top-level cursor, for the deterministic layer: every branch in this parser
 # happens inside a `commit`, so nothing forks out here. One resume per
 # operation, as above.
-$ scan_all : @str -> ({} -> <Scan, Hard> a) -> <Hard> a = \src, body =
+$ scan_all : @str -> ({} -> <Scan, Hard> a) -> <Hard> a = \src body =
 	let run = do body {}
 		ctl k
 		   | Scan.view u => \p = (k View.{ .src = src, .at = p }) p
@@ -300,7 +300,7 @@ $ guard : ({} -> <Hard> (Parsed a)) -> Parsed a = \body =
 	ctl k | Hard.fatal er => Parsed.Bad.{ er }
 	      | x => x
 
-$ run_parser : @str -> ({} -> <Scan, Hard> a) -> Parsed a = \src, body =
+$ run_parser : @str -> ({} -> <Scan, Hard> a) -> Parsed a = \src body =
 	guard (\u = Parsed.Ok.{ scan_all src body })
 
 # ==========================================================================
@@ -309,11 +309,11 @@ $ run_parser : @str -> ({} -> <Scan, Hard> a) -> Parsed a = \src, body =
 
 # Try `p`; should anything later fail, try `q` from the same position instead.
 $ alt : ({} -> <Scan, Choice, Soft, Hard> a) -> ({} -> <Scan, Choice, Soft, Hard> a)
-	-> <Scan, Choice, Soft, Hard> a = \p, q = if fork {} => p {} else q {}
+	-> <Scan, Choice, Soft, Hard> a = \p q = if fork {} => p {} else q {}
 
 $ alt3 : ({} -> <Scan, Choice, Soft, Hard> a) -> ({} -> <Scan, Choice, Soft, Hard> a)
 	-> ({} -> <Scan, Choice, Soft, Hard> a) -> <Scan, Choice, Soft, Hard> a =
-	\p, q, r = alt p (\u = alt q r)
+	\p q r = alt p (\u = alt q r)
 
 # A CUT. Run `p` under its own choice handler, over its own cursor opened at the
 # enclosing position, then move the enclosing cursor over what it consumed. Two
@@ -334,15 +334,15 @@ $ commit : ({} -> <Scan, Choice, Soft, Hard> a) -> <Scan, Hard> a = \p =
 # -- pure reads of a view ---------------------------------------------------
 
 # The byte at `off` from the cursor, or -1 past the end.
-$ byte : View -> @int -> @int = \v, off = byte_at v.src (v.at + off)
+$ byte : View -> @int -> @int = \v off = byte_at v.src (v.at + off)
 
 $ ended : View -> @bool = \v = v.at >= @array_len v.src
 
 # Does `want` sit at the cursor?
-$ at_lit : View -> @str -> @bool = \v, want = match_at v.src v.at want 0
+$ at_lit : View -> @str -> @bool = \v want = match_at v.src v.at want 0
 
 # The end of the run of bytes satisfying `ok` that starts at the cursor.
-$ run_to : View -> (@int -> @bool) -> @int = \v, ok = run_end v.src v.at ok
+$ run_to : View -> (@int -> @bool) -> @int = \v ok = run_end v.src v.at ok
 
 # -- operations -------------------------------------------------------------
 
@@ -350,11 +350,11 @@ $ pos : {} -> <Scan> @int = \u = (view {}).at
 
 $ at_end : {} -> <Scan> @bool = \u = ended (view {})
 
-$ ahead : @str -> {} -> <Scan> @bool = \s, u = at_lit (view {}) s
+$ ahead : @str -> {} -> <Scan> @bool = \s u = at_lit (view {}) s
 
 # Bytes while `ok` holds, in one step: measure the run, then make a single
 # `bump` of it.
-$ take_while : (@int -> @bool) -> {} -> <Scan> @str = \ok, u =
+$ take_while : (@int -> @bool) -> {} -> <Scan> @str = \ok u =
 	let v = view {} in
 	let to = run_to v ok in
 	(bump (to - v.at) ; @array_slice v.src v.at to)
@@ -370,7 +370,7 @@ $ name_run : View -> <Scan> @str = \v =
 	(bump (to - v.at) ; @array_slice v.src v.at to)
 
 # Consume `s`, or let the enclosing choice point try something else.
-$ lit : @str -> {} -> <Scan, Choice, Soft, Hard> {} = \s, u =
+$ lit : @str -> {} -> <Scan, Choice, Soft, Hard> {} = \s u =
 	let v = view {} in
 	if at_lit v s => bump (@array_len s)
 	else reject (expected v.at ("`" ++ s ++ "`") "")
@@ -378,7 +378,7 @@ $ lit : @str -> {} -> <Scan, Choice, Soft, Hard> {} = \s, u =
 # Consume `s`, or give up on the document: for a point the grammar has already
 # committed to, such as the `>` of a tag whose name it has read. `where` says
 # what that point is, so the message can place it.
-$ need : @str -> @str -> {} -> <Scan, Hard> {} = \s, where, u =
+$ need : @str -> @str -> {} -> <Scan, Hard> {} = \s where u =
 	let v = view {} in
 	if at_lit v s => bump (@array_len s)
 	else
@@ -390,7 +390,7 @@ $ need : @str -> @str -> {} -> <Scan, Hard> {} = \s, where, u =
 # an unterminated comment is not an invitation to try another production. The
 # error points at `opened`, where the construct began, which is the place a
 # reader has to go and fix.
-$ until_past : @str -> @str -> @int -> {} -> <Scan, Hard> @str = \close, what, opened, u =
+$ until_past : @str -> @str -> @int -> {} -> <Scan, Hard> @str = \close what opened u =
 	let v = view {} in
 	is find_from v.src close v.at
 	| Option.Some.{ at } =>
@@ -412,7 +412,7 @@ $ need_name : {} -> <Scan, Hard> @str = \u =
 
 # A quoted attribute value, either quoting style, entities decoded. `name` is
 # the attribute it belongs to, which is what makes the failure legible.
-$ quoted : @str -> {} -> <Scan, Choice, Soft, Hard> @str = \name, u =
+$ quoted : @str -> {} -> <Scan, Choice, Soft, Hard> @str = \name u =
 	let v = view {} in
 	let q = byte v 0 in
 	if q != 34 && q != 39 =>
@@ -457,7 +457,7 @@ $ text : {} -> <Scan, Choice, Soft, Hard> Node = \u =
 	if to == v.at => reject (expected v.at "text" "")
 	else (bump (to - v.at) ; Node.Text.{ decode (@array_slice v.src v.at to) })
 
-$ attr_list : @vec Attr -> {} -> <Scan, Choice, Soft, Hard> @vec Attr = \acc, u =
+$ attr_list : @vec Attr -> {} -> <Scan, Choice, Soft, Hard> @vec Attr = \acc u =
 	(skip_space {} ;
 	 if is_name_start (byte (view {}) 0) == @false => acc
 	 else
@@ -481,14 +481,14 @@ $ element : {} -> <Scan, Choice, Soft, Hard> Node = \u =
 		let a = attr_list (@vec_new {}) {} in
 		(skip_space {} ; alt (empty_tag n a) (open_tag n opened a)))
 
-$ empty_tag : @str -> @vec Attr -> {} -> <Scan, Choice, Soft, Hard> Node = \n, a, u =
+$ empty_tag : @str -> @vec Attr -> {} -> <Scan, Choice, Soft, Hard> Node = \n a u =
 	(lit "/>" {} ; elem n a List.Nil)
 
 # Past the `>` the element is committed, so its children and closing tag fail
 # hard rather than sending the parser back to try `/>` again. `opened` is where
 # this element's `<` is, which every failure below points a reader back to.
 $ open_tag : @str -> @int -> @vec Attr -> {} -> <Scan, Choice, Soft, Hard> Node =
-	\n, opened, a, u =
+	\n opened a u =
 	(need ">" ("to end the `<" ++ n ++ ">` tag") {} ;
 	 let ks = content (@vec_new {}) {} in
 	 (if at_end {} => fatal (unclosed n opened) else {} ;
@@ -500,7 +500,7 @@ $ open_tag : @str -> @int -> @vec Attr -> {} -> <Scan, Choice, Soft, Hard> Node 
 	   closes n opened a ks n2 at)))
 
 $ closes : @str -> @int -> @vec Attr -> @vec Node -> @str -> @int -> <Scan, Hard> Node =
-	\n, opened, a, ks, n2, at =
+	\n opened a ks n2 at =
 	if n2 == n => elem n a (list_of ks)
 	else
 		fatal (broken at
@@ -511,7 +511,7 @@ $ closes : @str -> @int -> @vec Attr -> @vec Node -> @str -> @int -> <Scan, Hard
 # followed it: `<!` opens one of three things, `</` closes something that is not
 # open here, and anything else is a literal `<` that should have been written
 # `&lt;` (the usual mistake, and the usual fix).
-$ after_lt : View -> @int -> Err = \v, opened =
+$ after_lt : View -> @int -> Err = \v opened =
 	let c = byte v 0 in
 	if c == 33 =>
 		expected (v.at + 1) "`<!--`, `<![CDATA[` or `<!DOCTYPE` after `<!`" ""
@@ -522,14 +522,14 @@ $ after_lt : View -> @int -> Err = \v, opened =
 			"a literal `<` in text must be written `&lt;`"
 
 # The element is still open at the end of the input.
-$ unclosed : @str -> @int -> <Scan> Err = \n, opened =
+$ unclosed : @str -> @int -> <Scan> Err = \n opened =
 	broken (pos {})
 		("`<" ++ n ++ ">` is never closed: expected `</" ++ n ++ ">`")
 		(opened_at n opened)
 
 # Where an element's `<` was, as a note. The source comes from the cursor, so
 # this reads the same line and column a reader sees in the diagnostic.
-$ opened_at : @str -> @int -> <Scan> @str = \n, at =
+$ opened_at : @str -> @int -> <Scan> @str = \n at =
 	let lc = line_col (view {}).src at in
 	"`<" ++ n ++ ">` opened at " ++ from_int lc.line ++ ":" ++ from_int lc.col
 
@@ -541,7 +541,7 @@ $ markup : {} -> <Scan, Choice, Soft, Hard> Node = \u =
 # Children up to the closing tag, or to the end of input at the document level.
 # The loop is deterministic and every item is cut, which is what keeps the
 # search bounded while leaving full backtracking inside each item.
-$ content : @vec Node -> {} -> <Scan, Hard> @vec Node = \acc, u =
+$ content : @vec Node -> {} -> <Scan, Hard> @vec Node = \acc u =
 	if at_end {} || ahead "</" {} => acc
 	else let n = commit markup in content (@vec_push acc n) {}
 
@@ -560,7 +560,7 @@ $ document : {} -> <Scan, Hard> Node = \u =
 		let root = commit element in
 		(trailing (tag root) {} ; root))
 
-$ trailing : @str -> {} -> <Scan, Hard> {} = \root, u =
+$ trailing : @str -> {} -> <Scan, Hard> {} = \root u =
 	(skip_space {} ;
 	 if at_end {} => {}
 	 else if ahead "<!--" {} || ahead "<?" {} =>
@@ -574,7 +574,7 @@ $ trailing : @str -> {} -> <Scan, Hard> {} = \root, u =
 # A value and the offset the cursor reached producing it.
 $ Span : @struct a = value : a, end : @int,
 
-$ walk : @vec @str -> @int -> Node -> <Pick, Choice, Soft> Node = \path, i, n =
+$ walk : @vec @str -> @int -> Node -> <Pick, Choice, Soft> Node = \path i n =
 	if i >= @vec_len path => n
 	else walk path (i + 1) (tagged (@vec_get path i) (child n))
 
@@ -582,18 +582,18 @@ $ walk : @vec @str -> @int -> Node -> <Pick, Choice, Soft> Node = \path, i, n =
 # Helpers
 # ==========================================================================
 
-$ byte_at : @str -> @int -> @int = \s, i =
+$ byte_at : @str -> @int -> @int = \s i =
 	if i < 0 || i >= @array_len s => 0 - 1 else @array_get s i
 
 # The failure to report when every branch has failed: the one that got FURTHEST
 # through the input, since that is the branch the document most nearly matched.
 # At a tie, neither branch is more right than the other, so report both.
-$ furthest : Err -> Err -> Err = \a, b =
+$ furthest : Err -> Err -> Err = \a b =
 	if b.at > a.at => b
 	else if a.at > b.at => a
 	else merged a b
 
-$ merged : Err -> Err -> Err = \a, b =
+$ merged : Err -> Err -> Err = \a b =
 	let want = union_want a.want b.want in
 	if @vec_len want == 0 => a
 	else Err.{
@@ -602,47 +602,47 @@ $ merged : Err -> Err -> Err = \a, b =
 		.want = want,
 		.note = if @array_len a.note > 0 => a.note else b.note }
 
-$ union_want : @vec @str -> @vec @str -> @vec @str = \xs, ys =
-	foldl (\acc, y = if any (\x = x == y) acc => acc else @vec_push acc y) xs ys
+$ union_want : @vec @str -> @vec @str -> @vec @str = \xs ys =
+	foldl (\acc y = if any (\x = x == y) acc => acc else @vec_push acc y) xs ys
 
 # -- building a failure -----------------------------------------------------
 
 # A failure a choice point may retry: `what` is the thing the grammar wanted,
 # phrased for a reader, and it joins the expectation set.
-$ expected : @int -> @str -> @str -> Err = \at, what, note =
+$ expected : @int -> @str -> @str -> Err = \at what note =
 	Err.{ .at = at, .msg = "expected " ++ what, .want = [what], .note = note }
 
 # A failure nothing retries, with its own headline rather than an expectation.
-$ broken : @int -> @str -> @str -> Err = \at, msg, note =
+$ broken : @int -> @str -> @str -> Err = \at msg note =
 	Err.{ .at = at, .msg = msg, .want = @vec_new {}, .note = note }
 
 # -- locating an offset -----------------------------------------------------
 
-$ line_col : @str -> @int -> LineCol = \src, at =
+$ line_col : @str -> @int -> LineCol = \src at =
 	count_lines src 0 (at_most at (@array_len src)) 1 0
 
-$ count_lines : @str -> @int -> @int -> @int -> @int -> LineCol = \src, i, at, line, bol =
+$ count_lines : @str -> @int -> @int -> @int -> @int -> LineCol = \src i at line bol =
 	if i >= at => LineCol.{ .line = line, .col = at - bol + 1 }
 	else if @array_get src i == 10 => count_lines src (i + 1) at (line + 1) (i + 1)
 	else count_lines src (i + 1) at line bol
 
 # The line the offset sits on, without its newline.
-$ line_at : @str -> @int -> @str = \src, at =
+$ line_at : @str -> @int -> @str = \src at =
 	let here = at_most at (@array_len src) in
 	let from = line_start src here in
 	@array_slice src from (run_end src from (\c = c != 10))
 
-$ line_start : @str -> @int -> @int = \src, at =
+$ line_start : @str -> @int -> @int = \src at =
 	if at <= 0 => 0
 	else if @array_get src (at - 1) == 10 => at
 	else line_start src (at - 1)
 
 # Pad the caret with the line's own leading bytes, tabs kept as tabs, so a
 # tab-indented line still lines the caret up: both rows hit the same tab stops.
-$ caret_pad : @str -> @int -> @str = \line, col =
+$ caret_pad : @str -> @int -> @str = \line col =
 	pad_onto line 0 (at_most (col - 1) (@array_len line)) ""
 
-$ pad_onto : @str -> @int -> @int -> @str -> @str = \line, i, upto, acc =
+$ pad_onto : @str -> @int -> @int -> @str -> @str = \line i upto acc =
 	if i >= upto => acc
 	else
 		let c = @array_get line i in
@@ -651,14 +651,14 @@ $ pad_onto : @str -> @int -> @int -> @str -> @str = \line, i, upto, acc =
 # "note:" carries the failure's guidance, and for an expectation failure what was
 # there instead. A failure with its own headline has already said what is wrong,
 # so "found" would only repeat the caret.
-$ note_line : @str -> Err -> @str = \src, er =
+$ note_line : @str -> Err -> @str = \src er =
 	let found =
 		if @vec_len er.want == 0 => "" else "found " ++ found_at src er.at in
 	let body = join "; " (filter (\part = @array_len part > 0) [found, er.note]) in
 	if @array_len body == 0 => "" else "note: " ++ body ++ "\n"
 
 # The byte at the offset, in words rather than as a number.
-$ found_at : @str -> @int -> @str = \src, at =
+$ found_at : @str -> @int -> @str = \src at =
 	if at >= @array_len src || at < 0 => "the end of the input"
 	else
 		let c = @array_get src at in
@@ -669,7 +669,7 @@ $ found_at : @str -> @int -> @str = \src, at =
 		else if c < 32 || c == 127 => "byte " ++ from_int c
 		else "`" ++ from_byte c ++ "`"
 
-$ at_most : @int -> @int -> @int = \a, b = if a < b => a else b
+$ at_most : @int -> @int -> @int = \a b = if a < b => a else b
 
 $ is_space_byte : @int -> @bool = \c = c == 32 || c == 9 || c == 10 || c == 13
 
@@ -678,42 +678,42 @@ $ is_name_start : @int -> @bool = \c = is_alpha c || c == 95 || c == 58
 $ is_name_char : @int -> @bool = \c =
 	is_name_start c || is_digit c || c == 45 || c == 46
 
-$ match_at : @str -> @int -> @str -> @int -> @bool = \src, at, want, i =
+$ match_at : @str -> @int -> @str -> @int -> @bool = \src at want i =
 	if i >= @array_len want => @true
 	else if at + i >= @array_len src => @false
 	else if @array_get src (at + i) != @array_get want i => @false
 	else match_at src at want (i + 1)
 
 # The end of the run of bytes satisfying `ok` that starts at `from`.
-$ run_end : @str -> @int -> (@int -> @bool) -> @int = \src, from, ok =
+$ run_end : @str -> @int -> (@int -> @bool) -> @int = \src from ok =
 	if from >= @array_len src => from
 	else if ok (@array_get src from) => run_end src (from + 1) ok
 	else from
 
-$ attr_at : @vec Attr -> @str -> @int -> Option @str = \as, want, i =
+$ attr_at : @vec Attr -> @str -> @int -> Option @str = \as want i =
 	if i >= @vec_len as => Option.None
 	else
 		let a = @vec_get as i in
 		if a.name == want => Option.Some.{ a.value } else attr_at as want (i + 1)
 
-$ text_onto : List Node -> @str -> @str = \ns, acc =
+$ text_onto : List Node -> @str -> @str = \ns acc =
 	is ns | List.Cons.{ h, t } => text_onto t (acc ++ text_of h) | _ => acc
 
-$ render_attrs : @vec Attr -> @int -> @str -> @str = \as, i, acc =
+$ render_attrs : @vec Attr -> @int -> @str -> @str = \as i acc =
 	if i >= @vec_len as => acc
 	else
 		let a = @vec_get as i in
 		render_attrs as (i + 1) (acc ++ " " ++ a.name ++ "=\"" ++ encode_attr a.value ++ "\"")
 
-$ render_kids : List Node -> @str -> @str = \ns, acc =
+$ render_kids : List Node -> @str -> @str = \ns acc =
 	is ns | List.Cons.{ h, t } => render_kids t (acc ++ render h) | _ => acc
 
 # Resume a continuation with every candidate, collecting all of the outcomes.
-$ pick_each : (Node -> @vec a) -> List Node -> @vec a -> @vec a = \k, xs, acc =
+$ pick_each : (Node -> @vec a) -> List Node -> @vec a -> @vec a = \k xs acc =
 	is xs | List.Cons.{ h, t } => pick_each k t (append acc (k h)) | _ => acc
 
 # Resume a continuation with each candidate until one of them yields a match.
-$ first_of : (Node -> Option a) -> List Node -> Option a = \k, xs =
+$ first_of : (Node -> Option a) -> List Node -> Option a = \k xs =
 	is xs
 	| List.Cons.{ h, t } =>
 		(is k h | Option.Some.{ v } => Option.Some.{ v } | _ => first_of k t)
@@ -721,10 +721,10 @@ $ first_of : (Node -> Option a) -> List Node -> Option a = \k, xs =
 
 # -- lists ------------------------------------------------------------------
 
-$ list_len : List Node -> @int -> @int = \l, acc =
+$ list_len : List Node -> @int -> @int = \l acc =
 	is l | List.Cons.{ h, t } => list_len t (acc + 1) | _ => acc
 
-$ list_filter : (Node -> @bool) -> List Node -> List Node = \ok, l =
+$ list_filter : (Node -> @bool) -> List Node -> List Node = \ok l =
 	is l
 	| List.Cons.{ h, t } =>
 		(if ok h => List.Cons.{ h, list_filter ok t } else list_filter ok t)
@@ -733,7 +733,7 @@ $ list_filter : (Node -> @bool) -> List Node -> List Node = \ok, l =
 # A vector of children, in order, as a list.
 $ list_of : @vec Node -> List Node = \v = list_onto v (@vec_len v - 1) List.Nil
 
-$ list_onto : @vec Node -> @int -> List Node -> List Node = \v, i, acc =
+$ list_onto : @vec Node -> @int -> List Node -> List Node = \v i acc =
 	if i < 0 => acc else list_onto v (i - 1) List.Cons.{ @vec_get v i, acc }
 
 # -- entities ---------------------------------------------------------------
@@ -742,7 +742,7 @@ $ encode : @str -> @str = \s = encode_onto s 0 "" @false
 
 $ encode_attr : @str -> @str = \s = encode_onto s 0 "" @true
 
-$ encode_onto : @str -> @int -> @str -> @bool -> @str = \s, i, acc, in_attr =
+$ encode_onto : @str -> @int -> @str -> @bool -> @str = \s i acc in_attr =
 	if i >= @array_len s => acc
 	else
 		let c = @array_get s i in
@@ -756,7 +756,7 @@ $ encode_onto : @str -> @int -> @str -> @bool -> @str = \s, i, acc, in_attr =
 
 $ decode : @str -> @str = \s = decode_onto s 0 ""
 
-$ decode_onto : @str -> @int -> @str -> @str = \s, i, acc =
+$ decode_onto : @str -> @int -> @str -> @str = \s i acc =
 	if i >= @array_len s => acc
 	else if @array_get s i != 38 =>
 		decode_onto s (i + 1) (@array_push acc (@array_get s i))
@@ -791,7 +791,7 @@ $ numeric_entity : @str -> Option @str = \body =
 	| Option.Some.{ v } => if v > 0 && v < 256 => Option.Some.{ from_byte v } else Option.None
 	| _ => Option.None
 
-$ from_hex : @str -> @int -> @int -> Option @int = \s, i, acc =
+$ from_hex : @str -> @int -> @int -> Option @int = \s i acc =
 	if i >= @array_len s => (if i == 0 => Option.None else Option.Some.{ acc })
 	else
 		let c = @array_get s i in

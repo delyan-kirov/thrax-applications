@@ -1,8 +1,8 @@
-@mod MAIN
+$ @mod MAIN
 
 # \file MAIN.thx
 # \info The XML library's test suite and demo. The checks run at COMPILE time
-#       (`$ @run (assert ...)`), so `thrax check MAIN.thx` is the test run; the
+#       (`$ @e <| assert ...`), so `thrax check MAIN.thx` is the test run; the
 #       entry point parses a file and prints what it found.
 #           thrax run MAIN.thx sample.xml
 #           thrax run MAIN.thx            # uses the built-in sample
@@ -126,7 +126,7 @@ $ err_at : @str -> @int = \src =
 $ err_report : @str -> @str = \src =
 	is parse src | Parsed.Bad.{ er } => report "doc.xml" src er | _ => ""
 
-$ says : @str -> @str -> @bool = \src, part = STR.contains (err_report src) part
+$ says : @str -> @str -> @bool = \src part = STR.contains (err_report src) part
 
 # A closing tag that does not match is reported where it is, not at the start.
 $ ck_mismatch : @int = if err_at "<a><b></c></a>" > 6 => 0 else 1
@@ -216,13 +216,13 @@ $ test : @int =
 	+ ck_attr_msg + ck_comment_msg + ck_empty_msg + ck_trailing_msg
 	+ ck_bang_msg + ck_no_found_noise
 
-$ @run (assert (test == 0) "XML: a check failed")
+$ @e <| assert (test == 0) "XML: a check failed"
 
 # ==========================================================================
 # The demo
 # ==========================================================================
 
-$ describe : Node -> @int -> <@io> {} = \n, depth =
+$ describe : Node -> @int -> <@io> {} = \n depth =
 	(print (repeat "  " depth ++ "<" ++ tag n ++ ">") ;
 	 let t = trim (text_of n) in
 	 (is elements n
