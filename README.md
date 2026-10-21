@@ -25,6 +25,11 @@ self-contained.
   algebraic effects: the cursor is a handler's parameter, an alternative is a
   `fork` the handler resumes twice (so backtracking rewinds the input by
   itself), and the same effect drives the query engine.
+- **[alec](alec/)** -- a C compiler written in Thrax, compiling C11 (with
+  the common GNU extensions and its own C library) to WebAssembly, wasm32 or
+  wasm64. Every stage runs on algebraic effects: the preprocessor is a
+  coroutine that the parser pulls tokens from, and code generation falls back
+  to flattening a function when a jump does not fit structured control flow.
 - **[web](web/)** -- the browser playground: the compiler itself built to
   `wasm32-unknown-unknown` and driven from hand-written JS, so every example on
   the page is compiled and run client-side. `site/playground.wasm` is checked in,

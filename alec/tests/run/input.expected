@@ -1,0 +1,5 @@
+sum=100 word=hello d=3.14
+line: [first line]
+line: [second line]
+eof=1
+exit=0

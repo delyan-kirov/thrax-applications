@@ -7,3 +7,7 @@
 
 .*
 thrax-out
+
+# alec: test outputs and compiled modules
+/alec/tests/out
+/alec/**/*.wasm

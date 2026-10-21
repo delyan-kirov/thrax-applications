@@ -1,0 +1,12 @@
+$ @mod MAIN
+
+# \file MAIN.thx
+# \info alec, a C compiler targeting WebAssembly (wasm32 and wasm64), written
+#       in Thrax and run on the Thrax interpreter:
+#           thrax run MAIN.thx -- [options] file.c...
+#           node run.mjs a.wasm
+#       See README.md, and DRIVER for the pipeline.
+
+$ with DRIVER
+
+$ @main : @vec @str -> <@io> @int = \args = DRIVER.main args
