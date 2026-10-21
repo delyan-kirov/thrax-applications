@@ -23,12 +23,42 @@ the program's status.
 | `-o FILE` | output (default `a.wasm`) |
 | `-E` | preprocess only |
 | `-fsyntax-only`, `--dump-ast` | parse and type-check; print the typed tree |
+| `--dump-tokens`, `--dump-tokens=pp` | print the tokens as lexed, or as the parser sees them after preprocessing |
+| `--dump-wasm` | print the module as text (given `.wasm` files, print those) |
+| `--shell` | an interactive C shell (below) |
 | `-I DIR`, `-D NAME[=V]`, `-U NAME` | as in cc |
 | `-nostdlib` | do not link alec's C library (the entry is then `main`) |
 | `-w`, `-v` | no warnings; report library files loaded and phase times |
 | `--index-libc` | rebuild `libc/INDEX` and the library caches |
 
 Several `.c` files compile into one module, each its own translation unit.
+
+## The shell
+
+`alec --shell` (`thrax-out/MAIN --shell` when built natively) is an
+interactive C shell in the manner of `thrax repl`. Each entry is C:
+
+```
+c> int sq(int x) { return x * x; }
+c> sq(7)
+  // 49 : int
+c> 1.0 / 3
+  // 0.3333333333333333 : double
+c> for (int i = 0; i < 3; i++) printf("%d ", i);
+0 1 2 c> :type sq
+sq : int (int)
+```
+
+A declaration (a directive, or an entry that starts with a type) joins the
+session. Statements ending in `;` or `}` run once as the body of `main`, and
+anything else is an expression, run once with its value printed on a `//`
+line with its type, so a transcript pastes back as C. An entry continues over
+lines while a bracket is open, and every entry sees `<stdio.h>`. Statements
+are not replayed, so globals start afresh with each entry. `:tokens [pp]`,
+`:ast` and `:wasm` show an entry's tokens, typed tree and code (`:wasm all`
+the whole module), `:target` switches between wasm32 and wasm64, and `:help`
+lists the rest. Each entry is compiled, linked and run under node, so it takes
+about half a second natively.
 
 ## The design: effects all the way down
 
@@ -211,10 +241,12 @@ the command line's `-I`, `-D` or `-U`.
 | `GEN.thx` | code generation, including the flattening fallback |
 | `LINK.thx` | linking, layout, imports |
 | `CACHE.thx` | the parsed C library, saved and read back |
+| `SHELL.thx` | `--shell` |
+| `WAT.thx` | a module as text, for `--dump-wasm` and `:wasm` |
 | `WASM.thx` | the binary format |
 | `CFG.thx` | targets and predefined macros |
 | `DIAG.thx` | the diagnostics effect |
-| `DUMP.thx` | `--dump-ast` |
+| `DUMP.thx` | `--dump-ast`, `--dump-tokens` |
 | `TEST.thx` | the differential test runner |
 | `BENCH.thx` | phase timings |
 | `run.mjs` | the node host |

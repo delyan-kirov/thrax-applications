@@ -33,6 +33,7 @@ $ with TYPE
 $ with AST
 $ with PARSE
 $ with LINK
+$ with WASM
 
 $ magic : @str = "alec-tu 3\n"
 
@@ -246,22 +247,7 @@ $ r_str : @str -> @int -> {@str, @int} = \s i =
 	let n = r_int s i in
 	{@array_slice s n.1 (n.1 + n.0), n.1 + n.0}
 
-$ r_float : @str -> @int -> {@float64, @int} = \s i = let r = r_int s i in {from_bits r.0, r.1}
-
-# The double whose IEEE 754 bit pattern is `b`. Scaling by two is exact, so
-# every finite value, subnormals included, comes back bit for bit.
-$ from_bits : @int -> @float64 = \b =
-	let e = band (shr_u b 52) 2047,
-	    m = band b 4503599627370495,
-	    zero = C.i2d 0 in
-	let mag =
-		if e == 2047 => (if m == 0 => 1.0 / zero else zero / zero)
-		else if e == 0 => scale2 (C.i2d m) 1074
-		else scale2 (C.i2d (m + 4503599627370496)) (1075 - e) in
-	if b < 0 => mag * (0.0 - 1.0) else mag
-
-$ scale2 : @float64 -> @int -> @float64 = \x k =
-	if k > 0 => scale2 (x / 2.0) (k - 1) else if k < 0 => scale2 (x * 2.0) (k + 1) else x
+$ r_float : @str -> @int -> {@float64, @int} = \s i = let r = r_int s i in {f64_of_bits r.0, r.1}
 
 $ r_list : (@str -> @int -> {a, @int}) -> @str -> @int -> {List a, @int} = \f s i =
 	let n = r_int s i in

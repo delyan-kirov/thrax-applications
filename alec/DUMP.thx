@@ -5,6 +5,7 @@ $ @mod DUMP
 #       expression shows its type, so the conversions the parser inserted are
 #       visible.
 
+$ with LEX
 $ with TYPE
 $ with AST
 $ with PARSE
@@ -14,6 +15,19 @@ $ with VEC
 $ unit : TU -> @str = \tu =
 	VEC.foldl (\acc g = acc ++ global tu.layout g) "" tu.globals
 	++ VEC.foldl (\acc f = acc ++ func tu.layout f) "" tu.funcs
+
+# One token: where it is, its kind and its spelling (a malformed token's
+# spelling is the problem with it).
+$ token : Token -> @str = \t =
+	let kind = is t.kind
+		| Kind.Ident => "ident" | Kind.Num => "number" | Kind.Chr => "char" | Kind.Str => "string"
+		| Kind.Punct => "punct" | Kind.Other => "other" | Kind.Bad => "bad" in
+	t.pos.file ++ ":" ++ to_string t.pos.line ++ ":" ++ to_string t.pos.col ++ "  " ++ kind ++ "  " ++ t.text
+
+# The globals and functions `keep` accepts, by name and position.
+$ unit_where : TU -> (@str -> Pos -> @bool) -> @str = \tu keep =
+	VEC.foldl (\acc g = if keep g.name g.pos => acc ++ global tu.layout g else acc) "" tu.globals
+	++ VEC.foldl (\acc f = if keep f.name f.pos => acc ++ func tu.layout f else acc) "" tu.funcs
 
 $ @private
 
